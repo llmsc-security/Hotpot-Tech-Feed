@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # Hotpot Tech Feed — single-port deploy.
 #
-# Target: Ubuntu 22.04+ with Docker + Compose v2.
-# Builds the gateway (frontend SPA + nginx) and backend images, brings up the
-# full stack on an internal docker network, and exposes ONLY the gateway on
-# the host at $HOST_PORT (default 8080).
+# Works on Ubuntu 22.04+ and macOS (Docker Desktop). Builds the gateway
+# (frontend SPA + nginx) and backend images, brings up the full stack on an
+# internal docker network, and exposes ONLY the gateway on the host at
+# $HOST_PORT (default 8080).
 #
 # Idempotent: re-run any time. Pre-existing data volumes are preserved.
 #
@@ -25,10 +25,20 @@ hr()   { printf "${B}%s${X}\n" "────────────────
 # ---------- prerequisites ----------
 hr
 log "Checking prerequisites"
-command -v docker >/dev/null || { err "docker not found — apt install docker.io docker-compose-v2"; exit 1; }
-docker info >/dev/null 2>&1   || { err "docker installed but not running / no permission — try: sudo usermod -aG docker \$USER (then re-login)"; exit 1; }
+command -v docker >/dev/null || {
+    err "docker not found"
+    err "  Linux: apt install docker.io docker-compose-v2 (then add yourself to the docker group)"
+    err "  macOS: install Docker Desktop from https://www.docker.com/products/docker-desktop/"
+    exit 1
+}
+docker info >/dev/null 2>&1 || {
+    err "docker installed but not running / no permission"
+    err "  Linux: sudo systemctl start docker; add yourself to the docker group: sudo usermod -aG docker \$USER (re-login)"
+    err "  macOS: open Docker Desktop and wait for it to finish starting"
+    exit 1
+}
 if ! docker compose version >/dev/null 2>&1; then
-    err "docker compose v2 not installed — apt install docker-compose-v2"
+    err "docker compose v2 not installed (Linux: apt install docker-compose-v2; macOS: comes with Docker Desktop)"
     exit 1
 fi
 log "docker: $(docker --version | awk '{print $3}' | sed 's/,$//')   compose: $(docker compose version --short)"
@@ -38,12 +48,25 @@ if [ ! -f .env ]; then
     cp .env.example .env
     warn ".env created from .env.example — edit OPENAI_API_KEY, SMTP_PASSWORD, then re-run."
 fi
-# shellcheck disable=SC1091
-set -a; source .env; set +a
-HOST_PORT=${HOST_PORT:-8080}
+
+# Read only the values start.sh needs. We deliberately do NOT `source .env`
+# because bash will choke on unquoted values with spaces; docker-compose reads
+# .env natively and is fine with them.
+read_env() {
+    grep -E "^$1=" .env 2>/dev/null | tail -n 1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/"
+}
+HOST_PORT=$(read_env HOST_PORT); HOST_PORT=${HOST_PORT:-8080}
+OPENAI_API_KEY=$(read_env OPENAI_API_KEY)
+SMTP_PASSWORD=$(read_env SMTP_PASSWORD)
 
 # ---------- check host port not already taken ----------
-if command -v ss >/dev/null && ss -ltn "( sport = :${HOST_PORT} )" 2>/dev/null | grep -q LISTEN; then
+PORT_TAKEN=false
+if command -v ss >/dev/null 2>&1; then
+    ss -ltn "( sport = :${HOST_PORT} )" 2>/dev/null | grep -q LISTEN && PORT_TAKEN=true
+elif command -v lsof >/dev/null 2>&1; then
+    lsof -nP -iTCP:"${HOST_PORT}" -sTCP:LISTEN >/dev/null 2>&1 && PORT_TAKEN=true
+fi
+if [ "$PORT_TAKEN" = "true" ]; then
     err "Port ${HOST_PORT} is already in use on the host."
     err "Pick a free port and update HOST_PORT in .env, then re-run."
     exit 1
@@ -109,4 +132,11 @@ fi
 
 if [ "${SMTP_PASSWORD:-re_replace_me}" = "re_replace_me" ]; then
     warn "SMTP_PASSWORD is still a placeholder — send-test-digest will fail until you set the Resend API key in .env."
+fi
+
+# Open browser if a viewer is available — Linux uses xdg-open, macOS uses open.
+if command -v xdg-open >/dev/null 2>&1; then
+    xdg-open "http://127.0.0.1:${HOST_PORT}" >/dev/null 2>&1 &
+elif command -v open >/dev/null 2>&1; then
+    open "http://127.0.0.1:${HOST_PORT}" >/dev/null 2>&1 &
 fi

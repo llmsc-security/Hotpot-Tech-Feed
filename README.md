@@ -29,9 +29,10 @@ feed_hotpot_tech/
 
 ## Prerequisites
 
-Target OS: **Ubuntu 22.04+** (also works on Debian / other modern Linux).
+Works on **Ubuntu 22.04+** and **macOS** (Intel and Apple Silicon). All container images are multi-arch.
 
-- Docker + Compose v2 (`apt install docker.io docker-compose-v2`; add yourself to the `docker` group)
+- **Linux**: `apt install docker.io docker-compose-v2` (and add yourself to the `docker` group)
+- **macOS**: install Docker Desktop from <https://www.docker.com/products/docker-desktop/>
 
 That's it — Python and Node are inside the container images, you don't need them on the host.
 
