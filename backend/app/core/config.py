@@ -64,10 +64,15 @@ class Settings(BaseSettings):
     embeddings_model: str = "BAAI/bge-m3"
     embeddings_dim: int = 1024
 
-    # ---------- Email (Gmail SMTP) ----------
-    gmail_address: str = ""
-    gmail_app_password: str = ""
+    # ---------- Email (Resend SMTP via send.ai2wj.com) ----------
+    smtp_host: str = "smtp.resend.com"
+    smtp_port: int = 465
+    smtp_use_tls: bool = True
+    smtp_username: str = "resend"
+    smtp_password: str = "re_placeholder"  # Resend API key
+    digest_from_email: str = "digest@ai2wj.com"
     digest_from_name: str = "Hotpot Tech Feed"
+    digest_reply_to: str = "noreply@ai2wj.com"
 
     # ---------- Crawler ----------
     user_agent: str = (

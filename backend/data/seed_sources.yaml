@@ -8,192 +8,61 @@
 # For rss: {content_type, lab}.
 sources:
 
-  # ====================== arXiv categories ======================
-  - name: "arXiv cs.AI"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.AI/recent"
-    language: en
-    extra: { category: "cs.AI", max_results: 50 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.LG"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.LG/recent"
-    language: en
-    extra: { category: "cs.LG", max_results: 50 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.CL"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.CL/recent"
-    language: en
-    extra: { category: "cs.CL", max_results: 50 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.CV"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.CV/recent"
-    language: en
-    extra: { category: "cs.CV", max_results: 50 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.CR"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.CR/recent"
-    language: en
-    extra: { category: "cs.CR", max_results: 30 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.DC"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.DC/recent"
-    language: en
-    extra: { category: "cs.DC", max_results: 30 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.DB"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.DB/recent"
-    language: en
-    extra: { category: "cs.DB", max_results: 30 }
-    trust_score: 0.9
-
-  - name: "arXiv cs.SE"
-    kind: arxiv
-    url: "https://arxiv.org/list/cs.SE/recent"
-    language: en
-    extra: { category: "cs.SE", max_results: 30 }
-    trust_score: 0.9
+  # ====================== arXiv categories (recent listings) ======================
+  # Bumping max_results for the first crawl. arXiv is rate-limited (~1 req / 3 sec)
+  # so 14 categories × 100 = ~1400 candidate papers per run, ~45 sec wall-clock.
+  - { name: "arXiv cs.AI",  kind: arxiv, url: "https://arxiv.org/list/cs.AI/recent",  language: en, extra: { category: "cs.AI",  max_results: 100 }, trust_score: 0.9 }
+  - { name: "arXiv cs.LG",  kind: arxiv, url: "https://arxiv.org/list/cs.LG/recent",  language: en, extra: { category: "cs.LG",  max_results: 100 }, trust_score: 0.9 }
+  - { name: "arXiv cs.CL",  kind: arxiv, url: "https://arxiv.org/list/cs.CL/recent",  language: en, extra: { category: "cs.CL",  max_results: 100 }, trust_score: 0.9 }
+  - { name: "arXiv cs.CV",  kind: arxiv, url: "https://arxiv.org/list/cs.CV/recent",  language: en, extra: { category: "cs.CV",  max_results: 100 }, trust_score: 0.9 }
+  - { name: "arXiv cs.CR",  kind: arxiv, url: "https://arxiv.org/list/cs.CR/recent",  language: en, extra: { category: "cs.CR",  max_results: 80  }, trust_score: 0.9 }
+  - { name: "arXiv cs.DC",  kind: arxiv, url: "https://arxiv.org/list/cs.DC/recent",  language: en, extra: { category: "cs.DC",  max_results: 60  }, trust_score: 0.9 }
+  - { name: "arXiv cs.DB",  kind: arxiv, url: "https://arxiv.org/list/cs.DB/recent",  language: en, extra: { category: "cs.DB",  max_results: 60  }, trust_score: 0.9 }
+  - { name: "arXiv cs.SE",  kind: arxiv, url: "https://arxiv.org/list/cs.SE/recent",  language: en, extra: { category: "cs.SE",  max_results: 60  }, trust_score: 0.9 }
+  - { name: "arXiv cs.OS",  kind: arxiv, url: "https://arxiv.org/list/cs.OS/recent",  language: en, extra: { category: "cs.OS",  max_results: 40  }, trust_score: 0.85 }
+  - { name: "arXiv cs.SY",  kind: arxiv, url: "https://arxiv.org/list/cs.SY/recent",  language: en, extra: { category: "cs.SY",  max_results: 40  }, trust_score: 0.85 }
+  - { name: "arXiv cs.NE",  kind: arxiv, url: "https://arxiv.org/list/cs.NE/recent",  language: en, extra: { category: "cs.NE",  max_results: 40  }, trust_score: 0.85 }
+  - { name: "arXiv cs.IR",  kind: arxiv, url: "https://arxiv.org/list/cs.IR/recent",  language: en, extra: { category: "cs.IR",  max_results: 40  }, trust_score: 0.85 }
+  - { name: "arXiv cs.HC",  kind: arxiv, url: "https://arxiv.org/list/cs.HC/recent",  language: en, extra: { category: "cs.HC",  max_results: 40  }, trust_score: 0.85 }
+  - { name: "arXiv cs.RO",  kind: arxiv, url: "https://arxiv.org/list/cs.RO/recent",  language: en, extra: { category: "cs.RO",  max_results: 40  }, trust_score: 0.85 }
 
   # ====================== Industry research labs ======================
-  - name: "Google Research Blog"
-    kind: rss
-    url: "https://research.google/blog/rss/"
-    lab: "Google Research"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "DeepMind Blog"
-    kind: rss
-    url: "https://deepmind.google/blog/rss.xml"
-    lab: "DeepMind"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.9
-
-  - name: "OpenAI Blog"
-    kind: rss
-    url: "https://openai.com/blog/rss.xml"
-    lab: "OpenAI"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "Anthropic News"
-    kind: rss
-    url: "https://www.anthropic.com/news/rss.xml"
-    lab: "Anthropic"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "Meta AI Blog"
-    kind: rss
-    url: "https://ai.meta.com/blog/rss/"
-    lab: "Meta FAIR"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "Microsoft Research Blog"
-    kind: rss
-    url: "https://www.microsoft.com/en-us/research/feed/"
-    lab: "Microsoft Research"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "NVIDIA Developer Blog"
-    kind: rss
-    url: "https://developer.nvidia.com/blog/feed"
-    lab: "NVIDIA"
-    extra: { content_type: blog }
-    trust_score: 0.8
+  - { name: "Google Research Blog",     kind: rss, url: "https://research.google/blog/rss/",                  lab: "Google Research",     extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "DeepMind Blog",            kind: rss, url: "https://deepmind.google/blog/rss.xml",               lab: "DeepMind",            extra: { content_type: lab_announcement }, trust_score: 0.9  }
+  - { name: "OpenAI Blog",              kind: rss, url: "https://openai.com/blog/rss.xml",                    lab: "OpenAI",              extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "Anthropic News",           kind: rss, url: "https://www.anthropic.com/news/rss.xml",             lab: "Anthropic",           extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "Meta AI Blog",             kind: rss, url: "https://ai.meta.com/blog/rss/",                      lab: "Meta FAIR",           extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "Microsoft Research Blog",  kind: rss, url: "https://www.microsoft.com/en-us/research/feed/",     lab: "Microsoft Research",  extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "NVIDIA Developer Blog",    kind: rss, url: "https://developer.nvidia.com/blog/feed",             lab: "NVIDIA",              extra: { content_type: blog },             trust_score: 0.8  }
+  - { name: "Apple Machine Learning",   kind: rss, url: "https://machinelearning.apple.com/rss.xml",          lab: "Apple ML",            extra: { content_type: lab_announcement }, trust_score: 0.8  }
+  - { name: "AWS Machine Learning",     kind: rss, url: "https://aws.amazon.com/blogs/machine-learning/feed/",lab: "AWS",                 extra: { content_type: blog },             trust_score: 0.75 }
 
   # ====================== Star-level academic labs ======================
-  - name: "Berkeley BAIR"
-    kind: rss
-    url: "https://bair.berkeley.edu/blog/feed.xml"
-    lab: "Berkeley BAIR"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.95
-
-  - name: "Stanford AI Lab (SAIL)"
-    kind: rss
-    url: "https://ai.stanford.edu/blog/feed.xml"
-    lab: "Stanford AI Lab"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.95
-
-  - name: "MIT News — AI"
-    kind: rss
-    url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml"
-    lab: "MIT CSAIL"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.85
-
-  - name: "CMU Machine Learning Blog"
-    kind: rss
-    url: "https://blog.ml.cmu.edu/feed/"
-    lab: "CMU MLD"
-    extra: { content_type: lab_announcement }
-    trust_score: 0.9
+  - { name: "Berkeley BAIR",            kind: rss, url: "https://bair.berkeley.edu/blog/feed.xml",            lab: "Berkeley BAIR",       extra: { content_type: lab_announcement }, trust_score: 0.95 }
+  - { name: "Stanford AI Lab (SAIL)",   kind: rss, url: "https://ai.stanford.edu/blog/feed.xml",              lab: "Stanford AI Lab",     extra: { content_type: lab_announcement }, trust_score: 0.95 }
+  - { name: "MIT News — AI",            kind: rss, url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml", lab: "MIT CSAIL", extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "CMU Machine Learning Blog",kind: rss, url: "https://blog.ml.cmu.edu/feed/",                      lab: "CMU MLD",             extra: { content_type: lab_announcement }, trust_score: 0.9  }
+  - { name: "Princeton Language + Intelligence", kind: rss, url: "https://princeton-pli.github.io/feed.xml",  lab: "Princeton PLI",       extra: { content_type: lab_announcement }, trust_score: 0.85 }
+  - { name: "UWashington Allen School", kind: rss, url: "https://news.cs.washington.edu/feed/",               lab: "UW Allen School",     extra: { content_type: lab_announcement }, trust_score: 0.8  }
 
   # ====================== Engineering blogs ======================
-  - name: "Cloudflare Blog"
-    kind: rss
-    url: "https://blog.cloudflare.com/rss/"
-    lab: "Cloudflare"
-    extra: { content_type: blog }
-    trust_score: 0.8
-
-  - name: "Stripe Engineering"
-    kind: rss
-    url: "https://stripe.com/blog/feed.rss"
-    lab: "Stripe"
-    extra: { content_type: blog }
-    trust_score: 0.8
-
-  - name: "Netflix Tech Blog"
-    kind: rss
-    url: "https://netflixtechblog.com/feed"
-    lab: "Netflix"
-    extra: { content_type: blog }
-    trust_score: 0.8
-
-  - name: "Meta Engineering"
-    kind: rss
-    url: "https://engineering.fb.com/feed/"
-    lab: "Meta Engineering"
-    extra: { content_type: blog }
-    trust_score: 0.8
+  - { name: "Cloudflare Blog",          kind: rss, url: "https://blog.cloudflare.com/rss/",                   lab: "Cloudflare",          extra: { content_type: blog }, trust_score: 0.8 }
+  - { name: "Stripe Engineering",       kind: rss, url: "https://stripe.com/blog/feed.rss",                   lab: "Stripe",              extra: { content_type: blog }, trust_score: 0.8 }
+  - { name: "Netflix Tech Blog",        kind: rss, url: "https://netflixtechblog.com/feed",                   lab: "Netflix",             extra: { content_type: blog }, trust_score: 0.8 }
+  - { name: "Meta Engineering",         kind: rss, url: "https://engineering.fb.com/feed/",                   lab: "Meta Engineering",    extra: { content_type: blog }, trust_score: 0.8 }
+  - { name: "Uber Engineering",         kind: rss, url: "https://www.uber.com/blog/engineering/rss/",         lab: "Uber",                extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "Spotify Engineering",      kind: rss, url: "https://engineering.atspotify.com/feed/",            lab: "Spotify",             extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "Airbnb Engineering",       kind: rss, url: "https://medium.com/feed/airbnb-engineering",         lab: "Airbnb",              extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "Discord Engineering",      kind: rss, url: "https://discord.com/blog/rss.xml",                   lab: "Discord",             extra: { content_type: blog }, trust_score: 0.7  }
+  - { name: "Dropbox Tech",             kind: rss, url: "https://dropbox.tech/feed",                          lab: "Dropbox",             extra: { content_type: blog }, trust_score: 0.7  }
+  - { name: "Datadog Engineering",      kind: rss, url: "https://www.datadoghq.com/blog/engineering/feed/",   lab: "Datadog",             extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "GitHub Blog",              kind: rss, url: "https://github.blog/feed/",                          lab: "GitHub",              extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "Vercel Blog",              kind: rss, url: "https://vercel.com/atom",                            lab: "Vercel",              extra: { content_type: blog }, trust_score: 0.7  }
+  - { name: "PlanetScale Blog",         kind: rss, url: "https://planetscale.com/blog/rss.xml",               lab: "PlanetScale",         extra: { content_type: blog }, trust_score: 0.7  }
 
   # ====================== Aggregators / news ======================
-  - name: "Hacker News (front page)"
-    kind: rss
-    url: "https://hnrss.org/frontpage"
-    extra: { content_type: news }
-    trust_score: 0.6
-
-  - name: "Lobsters"
-    kind: rss
-    url: "https://lobste.rs/rss"
-    extra: { content_type: news }
-    trust_score: 0.65
-
-  - name: "r/MachineLearning"
-    kind: rss
-    url: "https://www.reddit.com/r/MachineLearning/.rss"
-    extra: { content_type: news }
-    trust_score: 0.55
-
-  - name: "Papers with Code (latest)"
-    kind: rss
-    url: "https://paperswithcode.com/latest/rss.xml"
-    extra: { content_type: paper }
-    trust_score: 0.75
+  - { name: "Hacker News (front page)", kind: rss, url: "https://hnrss.org/frontpage",                        extra: { content_type: news }, trust_score: 0.6  }
+  - { name: "Lobsters",                 kind: rss, url: "https://lobste.rs/rss",                              extra: { content_type: news }, trust_score: 0.65 }
+  - { name: "r/MachineLearning",        kind: rss, url: "https://www.reddit.com/r/MachineLearning/.rss",      extra: { content_type: news }, trust_score: 0.55 }
+  - { name: "r/programming",            kind: rss, url: "https://www.reddit.com/r/programming/.rss",          extra: { content_type: news }, trust_score: 0.5  }
+  - { name: "Papers with Code (latest)",kind: rss, url: "https://paperswithcode.com/latest/rss.xml",          extra: { content_type: paper }, trust_score: 0.75 }

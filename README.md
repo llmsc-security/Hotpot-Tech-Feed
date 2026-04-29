@@ -29,55 +29,131 @@ feed_hotpot_tech/
 
 ## Prerequisites
 
-- Python 3.11+
-- Node 20+
-- Docker (for Postgres / Redis / Qdrant)
+Target OS: **Ubuntu 22.04+** (also works on Debian / other modern Linux).
+
+- Python 3.11+ (`apt install python3.11 python3.11-venv`)
+- Node 20+ (NodeSource: <https://github.com/nodesource/distributions>)
+- Docker + Compose v2 (`apt install docker.io docker-compose-v2`; add yourself to the `docker` group)
 
 ---
 
-## Bring up the dev stack
+## One-shot bootstrap
+
+A single command does setup + run:
 
 ```bash
-# 1. Copy env template and edit secrets (OPENAI_API_KEY, GMAIL_APP_PASSWORD)
-cp .env.example .env
+git clone https://github.com/llmsc-security/Hotpot-Tech-Feed.git
+cd Hotpot-Tech-Feed
+cp .env.example .env                     # edit OPENAI_API_KEY and SMTP_PASSWORD
+bash start.sh
+```
 
-# 2. Start Postgres, Redis, Qdrant
-docker compose up -d
+`start.sh` is idempotent — re-run it any time. It will:
 
-# 3. Backend — install + migrate + seed sources
+1. Verify Python / Node / Docker
+2. Bring up Postgres + Redis + Qdrant via `docker compose`
+3. Create the Python venv, install deps, run migrations, seed sources
+4. Pull a first batch of items (skipped if `OPENAI_API_KEY` is still placeholder)
+5. Install frontend deps
+6. Start `uvicorn` (:8000) and Vite (:5173) in the background
+7. Tail logs at `.run/backend.log` and `.run/frontend.log`
+
+When it prints "is running", open `http://127.0.0.1:5173`.
+
+Press Ctrl+C to stop both servers. `docker compose down` to stop the database stack.
+
+---
+
+## Manual bring-up (if you want each step explicit)
+
+```bash
+cp .env.example .env                     # edit secrets
+docker compose up -d                     # Postgres, Redis, Qdrant
+
 cd backend
-python -m venv .venv && source .venv/bin/activate
+python3 -m venv .venv && source .venv/bin/activate
 pip install -e .
 alembic upgrade head
 hotpot seed-sources --file data/seed_sources.yaml
-
-# 4. First ingest (synchronous; ~1-3 minutes for the seed list)
-hotpot ingest-now
-
-# 5. Run the API
-uvicorn app.main:app --reload --port 8000
+hotpot ingest-now                        # 1-3 min for the seed list
+uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
 ```
 
 In another terminal:
 
 ```bash
-# 6. Frontend
 cd frontend
 npm install
-npm run dev      # opens http://localhost:5173
+npm run dev -- --host 127.0.0.1 --port 5173
 ```
 
-Open `http://localhost:5173` — you should see ingested items with summaries.
+Open `http://127.0.0.1:5173`.
 
 ---
 
 ## CLI reference
 
 ```bash
-hotpot seed-sources [--file PATH]    # idempotent; updates existing sources
-hotpot ingest-now                     # pull every active source once, sync
-hotpot ingest-source "arXiv cs.LG"    # pull a single source by name
-hotpot list-sources                   # print source rows + health
+hotpot seed-sources [--file PATH]         # idempotent; updates existing sources
+hotpot ingest-now                          # one full sync pass over every active source
+hotpot ingest-source "arXiv cs.LG"         # pull a single source by name
+hotpot ingest-deep [--passes 3 --sleep 30] # multiple passes for aggressive bootstrap
+hotpot enrich-all [--limit 1000]           # backfill summaries on items that lack one
+hotpot list-sources                        # print source rows + health
+hotpot preview-digest [--out PATH]         # render digest HTML locally (no email)
+hotpot send-test-digest --to EMAIL         # render and send today's digest end-to-end
+```
+
+---
+
+## Migration: snapshot on box A, restore on box B
+
+For "crawl on a build box, deploy the data to the workstation" or just for backups.
+
+### On the source box (where the data lives)
+
+```bash
+./scripts/snapshot.sh
+# → data/snapshots/hotpot-<TIMESTAMP>.tar.gz
+```
+
+The tarball contains:
+
+- `postgres.dump` — custom-format `pg_dump` of every table (sources, items, tags)
+- `qdrant/<collection>.snapshot` — Qdrant collection snapshot (skipped if Qdrant isn't reachable; pass `--no-qdrant` to skip explicitly)
+- `seed_sources.yaml` — the source list at snapshot time
+- `manifest.json` — timestamp, host, item / source counts
+
+### Transfer
+
+```bash
+scp data/snapshots/hotpot-*.tar.gz user@workstation:~/Hotpot-Tech-Feed/data/snapshots/
+```
+
+### On the target box
+
+```bash
+git clone https://github.com/llmsc-security/Hotpot-Tech-Feed.git
+cd Hotpot-Tech-Feed
+cp .env.example .env                  # edit secrets
+docker compose up -d                  # Postgres + Redis + Qdrant
+
+./scripts/restore.sh data/snapshots/hotpot-<TIMESTAMP>.tar.gz
+```
+
+The restore script:
+
+1. Drops and recreates the database (5-second confirmation prompt before the destructive step)
+2. Loads the dump with `pg_restore`
+3. Uploads the Qdrant snapshot (if present) via the recovery API
+4. Prints item / source counts so you can verify
+
+If the Qdrant snapshot isn't in the tarball or upload fails, you can re-embed locally instead — that's a simple `EMBEDDINGS_ENABLED=true hotpot enrich-all --all` once the L40s are configured.
+
+Then bring the app up normally:
+
+```bash
+bash start.sh
 ```
 
 ---
@@ -105,6 +181,26 @@ hotpot list-sources                   # print source rows + health
        ├── summarize()     → Qwen, 1–2 sentence neutral summary
        └── (commentary)    → off until prompts are tuned (set ENRICH_COMMENTARY=true)
 ```
+
+---
+
+## Email (Resend via send.ai2wj.com)
+
+`ai2wj.com` is verified at Resend with `send.ai2wj.com` carrying the
+SPF / DKIM / return-path records, so digests go out as `digest@ai2wj.com`
+with proper alignment. To send:
+
+1. Create an API key in the Resend dashboard.
+2. Put it in `.env` as `SMTP_PASSWORD`.
+3. Test:
+
+   ```bash
+   hotpot preview-digest --out /tmp/digest.html   # open this in a browser
+   hotpot send-test-digest --to you@example.com   # fires real SMTP
+   ```
+
+If `send-test-digest` returns `{"sent": true, ...}` and the email lands,
+the pipeline is working.
 
 ---
 
