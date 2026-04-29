@@ -53,7 +53,7 @@ fi
 # because bash will choke on unquoted values with spaces; docker-compose reads
 # .env natively and is fine with them.
 read_env() {
-    grep -E "^$1=" .env 2>/dev/null | tail -n 1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/"
+    { grep -E "^$1=" .env 2>/dev/null || true; } | tail -n 1 | cut -d= -f2- | sed 's/^"\(.*\)"$/\1/' | sed "s/^'\(.*\)'$/\1/"
 }
 HOST_PORT=$(read_env HOST_PORT); HOST_PORT=${HOST_PORT:-8080}
 OPENAI_API_KEY=$(read_env OPENAI_API_KEY)
