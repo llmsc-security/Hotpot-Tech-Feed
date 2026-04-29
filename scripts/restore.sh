@@ -72,28 +72,13 @@ SOURCES=$(docker compose exec -T postgres psql -U "$POSTGRES_USER" -d "$POSTGRES
     "SELECT COUNT(*) FROM sources;" 2>/dev/null | tr -d '[:space:]' || echo "?")
 log "Postgres restored — $ITEMS items, $SOURCES sources"
 
-# ---------- Qdrant restore (optional) ----------
-if [ -d "$SNAP_DIR/qdrant" ]; then
-    SNAP_FILE=$(find "$SNAP_DIR/qdrant" -maxdepth 1 -type f | head -n 1)
-    if [ -n "${SNAP_FILE:-}" ]; then
-        log "Uploading Qdrant snapshot $(basename "$SNAP_FILE")"
-        if curl -fs -X POST \
-            "$QDRANT_URL/collections/$QDRANT_COLLECTION/snapshots/upload?priority=snapshot" \
-            -F "snapshot=@$SNAP_FILE" >/dev/null; then
-            log "Qdrant snapshot recovered"
-        else
-            warn "Qdrant upload failed — falling back to re-embed"
-            warn "Run on this host:  EMBEDDINGS_ENABLED=true hotpot enrich-all --all"
-        fi
-    fi
-else
-    warn "Snapshot has no Qdrant data — re-embed locally if you need similarity dedup:"
-    warn "  EMBEDDINGS_ENABLED=true hotpot enrich-all --all"
-fi
+# Qdrant is not in the snapshot — re-embed if you need similarity dedup.
+warn "Qdrant collection is empty after restore (snapshots don't include embeddings)."
+warn "Re-embed in-place after restoring:"
+warn "  EMBEDDINGS_ENABLED=true docker compose run --rm backend hotpot enrich-all --all"
 
 log "Restore complete"
 echo
 echo "Verify with:"
-echo "  source backend/.venv/bin/activate"
-echo "  hotpot list-sources | head -5"
-echo "  curl -s http://127.0.0.1:8000/items?limit=3 | jq '.items[].title'"
+echo "  docker compose run --rm backend hotpot list-sources | head -5"
+echo "  curl -s http://127.0.0.1:\${HOST_PORT:-8080}/api/items?limit=3 | jq '.items[].title'"

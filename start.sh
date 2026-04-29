@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
-# Hotpot Tech Feed — one-shot bootstrap + run.
+# Hotpot Tech Feed — single-port deploy.
 #
-# Target: Ubuntu 22.04+ (also works on Debian / other modern Linux).
-# Idempotent: re-running is safe. It will:
-#   1. Check Python 3.11+ / Node 20+ / Docker are installed
-#   2. Copy .env.example → .env if missing
-#   3. Bring up Postgres + Redis + Qdrant via docker compose
-#   4. Set up the backend Python venv, install deps, migrate, seed
-#   5. Pull the first batch of items (skipped if OPENAI_API_KEY is placeholder)
-#   6. Install the frontend npm deps
-#   7. Start uvicorn (:8000) and the Vite dev server (:5173) in the background
-#   8. Tail logs, wait for Ctrl+C to stop everything
+# Target: Ubuntu 22.04+ with Docker + Compose v2.
+# Builds the gateway (frontend SPA + nginx) and backend images, brings up the
+# full stack on an internal docker network, and exposes ONLY the gateway on
+# the host at $HOST_PORT (default 8080).
 #
-# Run from the repo root:  bash start.sh
-#                          (or: chmod +x start.sh && ./start.sh)
+# Idempotent: re-run any time. Pre-existing data volumes are preserved.
+#
+# Run:    bash start.sh
+# Stop:   docker compose down
 
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 
-# ---------- pretty output ----------
 G='\033[0;32m'; Y='\033[1;33m'; R='\033[0;31m'; B='\033[0;34m'; X='\033[0m'
 log()  { printf "${G}▶${X} %s\n" "$*"; }
 warn() { printf "${Y}!${X} %s\n" "$*"; }
@@ -30,137 +25,52 @@ hr()   { printf "${B}%s${X}\n" "────────────────
 # ---------- prerequisites ----------
 hr
 log "Checking prerequisites"
-command -v python3 >/dev/null || { err "python3 not found — apt install python3.11 python3.11-venv"; exit 1; }
-command -v node    >/dev/null || { err "node not found — install Node 20+ (https://github.com/nodesource/distributions)"; exit 1; }
-command -v docker  >/dev/null || { err "docker not found — apt install docker.io docker-compose-v2  (or follow Docker's official Ubuntu guide)"; exit 1; }
-docker info >/dev/null 2>&1   || { err "docker is installed but not running / no permission — try:  sudo systemctl start docker  &  sudo usermod -aG docker \$USER  then re-login"; exit 1; }
-
-PYV=$(python3 -c 'import sys; print(f"{sys.version_info[0]}.{sys.version_info[1]}")')
-PYMAJ=$(python3 -c 'import sys; print(sys.version_info[0])')
-PYMIN=$(python3 -c 'import sys; print(sys.version_info[1])')
-if [ "$PYMAJ" -lt 3 ] || { [ "$PYMAJ" -eq 3 ] && [ "$PYMIN" -lt 11 ]; }; then
-    err "python3 is $PYV — need 3.11+. On Ubuntu 22.04 try: sudo add-apt-repository ppa:deadsnakes/ppa && sudo apt install python3.11 python3.11-venv"
+command -v docker >/dev/null || { err "docker not found — apt install docker.io docker-compose-v2"; exit 1; }
+docker info >/dev/null 2>&1   || { err "docker installed but not running / no permission — try: sudo usermod -aG docker \$USER (then re-login)"; exit 1; }
+if ! docker compose version >/dev/null 2>&1; then
+    err "docker compose v2 not installed — apt install docker-compose-v2"
     exit 1
 fi
-log "python3: $PYV   node: $(node --version)   docker: $(docker --version | awk '{print $3}' | sed 's/,$//')"
+log "docker: $(docker --version | awk '{print $3}' | sed 's/,$//')   compose: $(docker compose version --short)"
 
 # ---------- .env ----------
 if [ ! -f .env ]; then
     cp .env.example .env
-    warn ".env created from .env.example — edit it to set OPENAI_API_KEY and SMTP_PASSWORD"
-else
-    log ".env already exists"
+    warn ".env created from .env.example — edit OPENAI_API_KEY, SMTP_PASSWORD, then re-run."
+fi
+# shellcheck disable=SC1091
+set -a; source .env; set +a
+HOST_PORT=${HOST_PORT:-8080}
+
+# ---------- check host port not already taken ----------
+if command -v ss >/dev/null && ss -ltn "( sport = :${HOST_PORT} )" 2>/dev/null | grep -q LISTEN; then
+    err "Port ${HOST_PORT} is already in use on the host."
+    err "Pick a free port and update HOST_PORT in .env, then re-run."
+    exit 1
 fi
 
-# ---------- docker compose ----------
+# ---------- build + up ----------
 hr
-log "Starting Postgres + Redis + Qdrant"
+log "Building images (gateway + backend)"
+docker compose build
+
+log "Bringing up the stack"
 docker compose up -d
-printf "  Waiting for Postgres "
+
+# ---------- wait for gateway ----------
+hr
+printf "  Waiting for gateway on :%s " "$HOST_PORT"
 for i in $(seq 1 60); do
-    if docker compose exec -T postgres pg_isready -U hotpot >/dev/null 2>&1; then
-        printf " ${G}ready${X}\n"; break
+    if curl -fs "http://127.0.0.1:${HOST_PORT}/healthz" >/dev/null 2>&1; then
+        printf " ${G}up${X}\n"
+        break
     fi
-    printf "."; sleep 1
-    if [ "$i" -eq 60 ]; then printf " ${R}timeout${X}\n"; err "Postgres didn't come up"; exit 1; fi
-done
-
-# ---------- backend setup ----------
-hr
-log "Setting up backend"
-cd "$ROOT/backend"
-if [ ! -d .venv ]; then
-    log "Creating Python venv (.venv)"
-    python3 -m venv .venv
-fi
-# shellcheck disable=SC1091
-source .venv/bin/activate
-pip install --quiet --upgrade pip
-pip install --quiet -e .
-
-log "Running database migrations"
-alembic upgrade head
-
-log "Seeding sources"
-hotpot seed-sources --file data/seed_sources.yaml >/dev/null
-
-# ---------- ingest (skip cleanly if LLM key not set) ----------
-if grep -qE '^OPENAI_API_KEY=(re_)?(replace_me|placeholder|sk-placeholder)' "$ROOT/.env" || \
-   ! grep -q '^OPENAI_API_KEY=' "$ROOT/.env"; then
-    warn "OPENAI_API_KEY is still a placeholder — skipping initial ingest."
-    warn "Items will appear once you set a real key and run: hotpot ingest-now"
-else
-    log "Running first ingest (1–3 min for the seed list)"
-    hotpot ingest-now || warn "Ingest had errors — items may be partial."
-fi
-
-# ---------- frontend deps ----------
-hr
-log "Installing frontend npm packages"
-cd "$ROOT/frontend"
-if [ ! -d node_modules ]; then
-    npm install --silent --no-audit --no-fund
-else
-    log "node_modules already present (use 'rm -rf frontend/node_modules' to force reinstall)"
-fi
-
-# ---------- start both servers ----------
-hr
-log "Starting backend (uvicorn :8000) and frontend (vite :5173)"
-
-mkdir -p "$ROOT/.run"
-BACKEND_LOG="$ROOT/.run/backend.log"
-FRONTEND_LOG="$ROOT/.run/frontend.log"
-: > "$BACKEND_LOG"
-: > "$FRONTEND_LOG"
-
-cd "$ROOT/backend"
-# shellcheck disable=SC1091
-source .venv/bin/activate
-nohup uvicorn app.main:app --host 127.0.0.1 --port 8000 --log-level info \
-    > "$BACKEND_LOG" 2>&1 &
-BACKEND_PID=$!
-
-cd "$ROOT/frontend"
-nohup npm run dev -- --host 127.0.0.1 --port 5173 \
-    > "$FRONTEND_LOG" 2>&1 &
-FRONTEND_PID=$!
-
-cleanup() {
-    printf "\n"
-    log "Stopping servers (backend pid=$BACKEND_PID, frontend pid=$FRONTEND_PID)"
-    kill "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
-    wait "$BACKEND_PID" "$FRONTEND_PID" 2>/dev/null || true
-    log "Stopped. Postgres / Redis / Qdrant still running — stop with: docker compose down"
-    exit 0
-}
-trap cleanup INT TERM
-
-# Wait for backend to answer /healthz
-printf "  Waiting for backend "
-for i in $(seq 1 60); do
-    if curl -fs http://127.0.0.1:8000/healthz >/dev/null 2>&1; then
-        printf " ${G}up${X}\n"; break
-    fi
-    printf "."; sleep 1
+    printf "."; sleep 2
     if [ "$i" -eq 60 ]; then
         printf " ${R}timeout${X}\n"
-        err "Backend didn't become healthy. See $BACKEND_LOG"
-        cleanup
-    fi
-done
-
-# Wait for frontend
-printf "  Waiting for frontend "
-for i in $(seq 1 60); do
-    if curl -fs http://127.0.0.1:5173 >/dev/null 2>&1; then
-        printf " ${G}up${X}\n"; break
-    fi
-    printf "."; sleep 1
-    if [ "$i" -eq 60 ]; then
-        printf " ${R}timeout${X}\n"
-        err "Frontend didn't become healthy. See $FRONTEND_LOG"
-        cleanup
+        err "Gateway didn't become healthy. Check logs:"
+        err "  docker compose logs gateway backend"
+        exit 1
     fi
 done
 
@@ -170,27 +80,33 @@ cat <<EOF
 
   ${G}Hotpot Tech Feed is running.${X}
 
-  ${B}Open in browser →${X}  http://127.0.0.1:5173
-  API docs           →  http://127.0.0.1:8000/docs
-  Health check       →  http://127.0.0.1:8000/healthz
+  Open in browser →  ${B}http://127.0.0.1:${HOST_PORT}${X}
+  API docs        →  http://127.0.0.1:${HOST_PORT}/docs
+  Health          →  http://127.0.0.1:${HOST_PORT}/healthz
+
+  Containers (internal network, no host ports):
+    hotpot-postgres  hotpot-redis  hotpot-qdrant  hotpot-backend  hotpot-gateway
+
+  CLI from inside the backend container:
+    docker compose run --rm backend hotpot ingest-now
+    docker compose run --rm backend hotpot ingest-deep --passes 5
+    docker compose run --rm backend hotpot enrich-all --limit 2000
+    docker compose run --rm backend hotpot send-test-digest --to you@example.com
 
   Logs:
-    backend:   tail -f .run/backend.log
-    frontend:  tail -f .run/frontend.log
+    docker compose logs -f gateway backend
 
-  Useful commands (in another terminal, with .venv activated):
-    hotpot ingest-now              re-pull every source
-    hotpot preview-digest          render today's digest to digest_preview.html
-    hotpot send-test-digest --to=you@example.com   real SMTP send
-
-  Press Ctrl+C to stop both servers.
+  Stop everything:
+    docker compose down            # keeps data volumes
+    docker compose down -v         # also wipes Postgres + Qdrant data
 EOF
 hr
 
-# Open browser if a desktop is available (no-op on headless servers)
-if command -v xdg-open >/dev/null 2>&1; then
-    xdg-open http://127.0.0.1:5173 >/dev/null 2>&1 &
+if [ -z "${OPENAI_API_KEY:-}" ] || [ "$OPENAI_API_KEY" = "replace_me" ]; then
+    warn "OPENAI_API_KEY is still a placeholder — items will ingest without summaries."
+    warn "Set a real key in .env and:  docker compose run --rm backend hotpot enrich-all"
 fi
 
-# Block until either server exits or user hits Ctrl+C
-wait "$BACKEND_PID" "$FRONTEND_PID"
+if [ "${SMTP_PASSWORD:-re_replace_me}" = "re_replace_me" ]; then
+    warn "SMTP_PASSWORD is still a placeholder — send-test-digest will fail until you set the Resend API key in .env."
+fi

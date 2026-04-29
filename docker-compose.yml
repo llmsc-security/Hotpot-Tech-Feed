@@ -1,16 +1,118 @@
-# Local dev stack: Postgres, Redis, Qdrant.
-# The backend itself runs on the host (uvicorn) for fast reload during dev.
-# In prod, add a backend service here pointing at the same network.
+# Hotpot Tech Feed — single-host-port deploy.
+#
+# Only the `gateway` service binds to the host (HOST_PORT, default 8080).
+# Everything else lives on the `internal` docker network and is unreachable
+# from outside the compose project, so this stack coexists with anything else
+# the workstation is running on its standard ports (Postgres 5432, Redis 6379, …).
+#
+# Usage:
+#   cp .env.example .env                      # set HOST_PORT, OPENAI_API_KEY, SMTP_PASSWORD
+#   docker compose up -d --build              # builds backend + gateway, starts everything
+#   docker compose run --rm backend hotpot ingest-now   # one-shot CLI commands
+#   docker compose logs -f gateway backend    # tail logs
+#   docker compose down                       # stop (data volumes persist)
 
 services:
+
+  # ----- The only host-facing service -----
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/gateway.Dockerfile
+    image: hotpot-gateway
+    container_name: hotpot-gateway
+    ports:
+      - "${HOST_PORT:-8080}:80"
+    depends_on:
+      - backend
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ----- FastAPI + CLI -----
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    image: hotpot-backend
+    container_name: hotpot-backend
+    environment:
+      ENV: ${ENV:-prod}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hotpot}
+      POSTGRES_USER: ${POSTGRES_USER:-hotpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-hotpot_items}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.ai2wj.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace_me}
+      LLM_MODEL_TAGGER: ${LLM_MODEL_TAGGER:-qwen3.6}
+      LLM_MODEL_SUMMARY: ${LLM_MODEL_SUMMARY:-qwen3.6}
+      LLM_MODEL_COMMENTARY: ${LLM_MODEL_COMMENTARY:-qwen3.6}
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      EMBEDDINGS_DIM: ${EMBEDDINGS_DIM:-1024}
+      SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-resend}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-re_replace_me}
+      DIGEST_FROM_EMAIL: ${DIGEST_FROM_EMAIL:-digest@ai2wj.com}
+      DIGEST_FROM_NAME: ${DIGEST_FROM_NAME:-Hotpot Tech Feed}
+      DIGEST_REPLY_TO: ${DIGEST_REPLY_TO:-noreply@ai2wj.com}
+      USER_AGENT: ${USER_AGENT:-HotpotTechFeed/0.1 (+https://feed.ai2wj.com)}
+      DEDUP_TITLE_THRESHOLD: ${DEDUP_TITLE_THRESHOLD:-0.90}
+      DEDUP_EMBEDDING_THRESHOLD: ${DEDUP_EMBEDDING_THRESHOLD:-0.92}
+      DEDUP_WINDOW_DAYS: ${DEDUP_WINDOW_DAYS:-7}
+      ENRICH_SUMMARY: ${ENRICH_SUMMARY:-true}
+      ENRICH_COMMENTARY: ${ENRICH_COMMENTARY:-false}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - internal
+
+  # ----- Celery worker (idle until you start scheduling tasks) -----
+  worker:
+    image: hotpot-backend
+    container_name: hotpot-worker
+    command: ["celery", "-A", "app.core.celery_app.celery_app", "worker", "-l", "info"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-hotpot}
+      POSTGRES_USER: ${POSTGRES_USER:-hotpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.ai2wj.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace_me}
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+    depends_on:
+      backend:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - internal
+    profiles:
+      - worker
+
+  # ----- Internal data services — NO host port mappings -----
   postgres:
     image: postgres:16-alpine
+    container_name: hotpot-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-hotpot}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
       POSTGRES_DB: ${POSTGRES_DB:-hotpot}
-    ports:
-      - "5432:5432"
     volumes:
       - hotpot_pg:/var/lib/postgresql/data
     healthcheck:
@@ -18,23 +120,33 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+    restart: unless-stopped
+    networks:
+      - internal
 
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    container_name: hotpot-redis
     volumes:
       - hotpot_redis:/data
+    restart: unless-stopped
+    networks:
+      - internal
 
   qdrant:
     image: qdrant/qdrant:v1.9.2
-    ports:
-      - "6333:6333"
-      - "6334:6334"
+    container_name: hotpot-qdrant
     volumes:
       - hotpot_qdrant:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - internal
 
 volumes:
   hotpot_pg:
   hotpot_redis:
   hotpot_qdrant:
+
+networks:
+  internal:
+    driver: bridge

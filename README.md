@@ -31,63 +31,73 @@ feed_hotpot_tech/
 
 Target OS: **Ubuntu 22.04+** (also works on Debian / other modern Linux).
 
-- Python 3.11+ (`apt install python3.11 python3.11-venv`)
-- Node 20+ (NodeSource: <https://github.com/nodesource/distributions>)
 - Docker + Compose v2 (`apt install docker.io docker-compose-v2`; add yourself to the `docker` group)
+
+That's it — Python and Node are inside the container images, you don't need them on the host.
+
+---
+
+## Architecture (host-port-wise)
+
+Only **one** port reaches the host. Everything else is on the internal docker network and can't be hit from outside the project, so this stack coexists peacefully with anything else running on the workstation (other Postgres, other Redis, etc.).
+
+```
+   user
+    │
+    ▼ HOST_PORT (default 8080)
+┌──────────────────────────────────────────────────────────────────┐
+│  gateway (nginx)                                                 │
+│   ├─ /            → built React SPA                              │
+│   ├─ /api/*       → backend (uvicorn :8000)                      │
+│   └─ /docs, /openapi.json                                        │
+└──────────────────────────────────────────────────────────────────┘
+                                │  (internal docker network)
+                                ▼
+        ┌─────────┐  ┌────────┐  ┌──────────┐  ┌─────────┐
+        │ backend │──│postgres│  │  redis   │  │ qdrant  │
+        └─────────┘  └────────┘  └──────────┘  └─────────┘
+```
+
+Ports 5432, 6379, 6333 are NOT exposed on the host.
 
 ---
 
 ## One-shot bootstrap
 
-A single command does setup + run:
-
 ```bash
 git clone https://github.com/llmsc-security/Hotpot-Tech-Feed.git
 cd Hotpot-Tech-Feed
-cp .env.example .env                     # edit OPENAI_API_KEY and SMTP_PASSWORD
+cp .env.example .env                     # edit OPENAI_API_KEY, SMTP_PASSWORD, HOST_PORT if 8080 is taken
 bash start.sh
 ```
 
-`start.sh` is idempotent — re-run it any time. It will:
+`start.sh` is idempotent — re-run it any time. It builds the images, brings up the stack, waits for the gateway to be healthy, and prints the URL.
 
-1. Verify Python / Node / Docker
-2. Bring up Postgres + Redis + Qdrant via `docker compose`
-3. Create the Python venv, install deps, run migrations, seed sources
-4. Pull a first batch of items (skipped if `OPENAI_API_KEY` is still placeholder)
-5. Install frontend deps
-6. Start `uvicorn` (:8000) and Vite (:5173) in the background
-7. Tail logs at `.run/backend.log` and `.run/frontend.log`
+When it prints **"is running"**, open `http://127.0.0.1:8080` (or whichever `HOST_PORT` you chose).
 
-When it prints "is running", open `http://127.0.0.1:5173`.
-
-Press Ctrl+C to stop both servers. `docker compose down` to stop the database stack.
+Stop everything with `docker compose down`. Add `-v` to also wipe data volumes.
 
 ---
 
-## Manual bring-up (if you want each step explicit)
+## Running CLI commands (ingest, enrich, digest)
+
+The `hotpot` CLI lives inside the backend container:
 
 ```bash
-cp .env.example .env                     # edit secrets
-docker compose up -d                     # Postgres, Redis, Qdrant
-
-cd backend
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .
-alembic upgrade head
-hotpot seed-sources --file data/seed_sources.yaml
-hotpot ingest-now                        # 1-3 min for the seed list
-uvicorn app.main:app --reload --host 127.0.0.1 --port 8000
+docker compose run --rm backend hotpot list-sources
+docker compose run --rm backend hotpot ingest-now
+docker compose run --rm backend hotpot ingest-deep --passes 5 --sleep 60
+docker compose run --rm backend hotpot enrich-all --limit 2000
+docker compose run --rm backend hotpot preview-digest --out /tmp/digest.html   # written inside the container
+docker compose run --rm backend hotpot send-test-digest --to you@example.com
 ```
 
-In another terminal:
+Or open a shell in the running container:
 
 ```bash
-cd frontend
-npm install
-npm run dev -- --host 127.0.0.1 --port 5173
+docker compose exec backend bash
+hotpot list-sources
 ```
-
-Open `http://127.0.0.1:5173`.
 
 ---
 
@@ -119,10 +129,11 @@ For "crawl on a build box, deploy the data to the workstation" or just for backu
 
 The tarball contains:
 
-- `postgres.dump` — custom-format `pg_dump` of every table (sources, items, tags)
-- `qdrant/<collection>.snapshot` — Qdrant collection snapshot (skipped if Qdrant isn't reachable; pass `--no-qdrant` to skip explicitly)
+- `postgres.dump` — custom-format `pg_dump` of every table (sources, items, tags, summaries)
 - `seed_sources.yaml` — the source list at snapshot time
 - `manifest.json` — timestamp, host, item / source counts
+
+Qdrant embeddings are NOT in the snapshot (Qdrant has no host port now, and embeddings can be regenerated quickly on the target box).
 
 ### Transfer
 
@@ -135,25 +146,21 @@ scp data/snapshots/hotpot-*.tar.gz user@workstation:~/Hotpot-Tech-Feed/data/snap
 ```bash
 git clone https://github.com/llmsc-security/Hotpot-Tech-Feed.git
 cd Hotpot-Tech-Feed
-cp .env.example .env                  # edit secrets
-docker compose up -d                  # Postgres + Redis + Qdrant
-
-./scripts/restore.sh data/snapshots/hotpot-<TIMESTAMP>.tar.gz
+cp .env.example .env                                # edit secrets
+bash start.sh                                       # builds + starts the stack
+./scripts/restore.sh data/snapshots/hotpot-<TS>.tar.gz   # loads the dump
 ```
 
 The restore script:
 
 1. Drops and recreates the database (5-second confirmation prompt before the destructive step)
-2. Loads the dump with `pg_restore`
-3. Uploads the Qdrant snapshot (if present) via the recovery API
-4. Prints item / source counts so you can verify
+2. Loads the dump with `pg_restore` via `docker compose exec postgres`
+3. Prints item / source counts to verify
 
-If the Qdrant snapshot isn't in the tarball or upload fails, you can re-embed locally instead — that's a simple `EMBEDDINGS_ENABLED=true hotpot enrich-all --all` once the L40s are configured.
-
-Then bring the app up normally:
+If you need similarity dedup, re-embed in place:
 
 ```bash
-bash start.sh
+EMBEDDINGS_ENABLED=true docker compose run --rm backend hotpot enrich-all --all
 ```
 
 ---
