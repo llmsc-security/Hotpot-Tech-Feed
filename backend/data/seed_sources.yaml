@@ -1,0 +1,199 @@
+# Initial source seed list for Hotpot Tech Feed.
+# Run with:  hotpot seed-sources --file data/seed_sources.yaml
+#
+# Each entry creates one Source row. Adapter dispatch is by `kind`.
+# Kinds: arxiv | rss | html | github
+#
+# `extra` is adapter-specific JSON. For arxiv: {category, max_results}.
+# For rss: {content_type, lab}.
+sources:
+
+  # ====================== arXiv categories ======================
+  - name: "arXiv cs.AI"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.AI/recent"
+    language: en
+    extra: { category: "cs.AI", max_results: 50 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.LG"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.LG/recent"
+    language: en
+    extra: { category: "cs.LG", max_results: 50 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.CL"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.CL/recent"
+    language: en
+    extra: { category: "cs.CL", max_results: 50 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.CV"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.CV/recent"
+    language: en
+    extra: { category: "cs.CV", max_results: 50 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.CR"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.CR/recent"
+    language: en
+    extra: { category: "cs.CR", max_results: 30 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.DC"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.DC/recent"
+    language: en
+    extra: { category: "cs.DC", max_results: 30 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.DB"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.DB/recent"
+    language: en
+    extra: { category: "cs.DB", max_results: 30 }
+    trust_score: 0.9
+
+  - name: "arXiv cs.SE"
+    kind: arxiv
+    url: "https://arxiv.org/list/cs.SE/recent"
+    language: en
+    extra: { category: "cs.SE", max_results: 30 }
+    trust_score: 0.9
+
+  # ====================== Industry research labs ======================
+  - name: "Google Research Blog"
+    kind: rss
+    url: "https://research.google/blog/rss/"
+    lab: "Google Research"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "DeepMind Blog"
+    kind: rss
+    url: "https://deepmind.google/blog/rss.xml"
+    lab: "DeepMind"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.9
+
+  - name: "OpenAI Blog"
+    kind: rss
+    url: "https://openai.com/blog/rss.xml"
+    lab: "OpenAI"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "Anthropic News"
+    kind: rss
+    url: "https://www.anthropic.com/news/rss.xml"
+    lab: "Anthropic"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "Meta AI Blog"
+    kind: rss
+    url: "https://ai.meta.com/blog/rss/"
+    lab: "Meta FAIR"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "Microsoft Research Blog"
+    kind: rss
+    url: "https://www.microsoft.com/en-us/research/feed/"
+    lab: "Microsoft Research"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "NVIDIA Developer Blog"
+    kind: rss
+    url: "https://developer.nvidia.com/blog/feed"
+    lab: "NVIDIA"
+    extra: { content_type: blog }
+    trust_score: 0.8
+
+  # ====================== Star-level academic labs ======================
+  - name: "Berkeley BAIR"
+    kind: rss
+    url: "https://bair.berkeley.edu/blog/feed.xml"
+    lab: "Berkeley BAIR"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.95
+
+  - name: "Stanford AI Lab (SAIL)"
+    kind: rss
+    url: "https://ai.stanford.edu/blog/feed.xml"
+    lab: "Stanford AI Lab"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.95
+
+  - name: "MIT News — AI"
+    kind: rss
+    url: "https://news.mit.edu/topic/mitartificial-intelligence2-rss.xml"
+    lab: "MIT CSAIL"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.85
+
+  - name: "CMU Machine Learning Blog"
+    kind: rss
+    url: "https://blog.ml.cmu.edu/feed/"
+    lab: "CMU MLD"
+    extra: { content_type: lab_announcement }
+    trust_score: 0.9
+
+  # ====================== Engineering blogs ======================
+  - name: "Cloudflare Blog"
+    kind: rss
+    url: "https://blog.cloudflare.com/rss/"
+    lab: "Cloudflare"
+    extra: { content_type: blog }
+    trust_score: 0.8
+
+  - name: "Stripe Engineering"
+    kind: rss
+    url: "https://stripe.com/blog/feed.rss"
+    lab: "Stripe"
+    extra: { content_type: blog }
+    trust_score: 0.8
+
+  - name: "Netflix Tech Blog"
+    kind: rss
+    url: "https://netflixtechblog.com/feed"
+    lab: "Netflix"
+    extra: { content_type: blog }
+    trust_score: 0.8
+
+  - name: "Meta Engineering"
+    kind: rss
+    url: "https://engineering.fb.com/feed/"
+    lab: "Meta Engineering"
+    extra: { content_type: blog }
+    trust_score: 0.8
+
+  # ====================== Aggregators / news ======================
+  - name: "Hacker News (front page)"
+    kind: rss
+    url: "https://hnrss.org/frontpage"
+    extra: { content_type: news }
+    trust_score: 0.6
+
+  - name: "Lobsters"
+    kind: rss
+    url: "https://lobste.rs/rss"
+    extra: { content_type: news }
+    trust_score: 0.65
+
+  - name: "r/MachineLearning"
+    kind: rss
+    url: "https://www.reddit.com/r/MachineLearning/.rss"
+    extra: { content_type: news }
+    trust_score: 0.55
+
+  - name: "Papers with Code (latest)"
+    kind: rss
+    url: "https://paperswithcode.com/latest/rss.xml"
+    extra: { content_type: paper }
+    trust_score: 0.75

@@ -1,0 +1,40 @@
+# Local dev stack: Postgres, Redis, Qdrant.
+# The backend itself runs on the host (uvicorn) for fast reload during dev.
+# In prod, add a backend service here pointing at the same network.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-hotpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
+      POSTGRES_DB: ${POSTGRES_DB:-hotpot}
+    ports:
+      - "5432:5432"
+    volumes:
+      - hotpot_pg:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hotpot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - hotpot_redis:/data
+
+  qdrant:
+    image: qdrant/qdrant:v1.9.2
+    ports:
+      - "6333:6333"
+      - "6334:6334"
+    volumes:
+      - hotpot_qdrant:/qdrant/storage
+
+volumes:
+  hotpot_pg:
+  hotpot_redis:
+  hotpot_qdrant:
