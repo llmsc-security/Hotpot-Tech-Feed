@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { listItems, nlSearch, recentSearches, type NLFilter } from "../api";
 import ItemCard from "../components/ItemCard";
+import { useConsent } from "../hooks/useConsent";
 
 const TIPS = [
   "ML papers from arxiv this year",
@@ -33,11 +34,14 @@ export default function Browse() {
   const [historyOpen, setHistoryOpen] = useState(false);
   const inputWrapRef = useRef<HTMLDivElement | null>(null);
   const qc = useQueryClient();
+  const { consent, set: setConsent } = useConsent();
 
   const history = useQuery({
     queryKey: ["recent-searches"],
     queryFn: () => recentSearches(20),
     staleTime: 30_000,
+    // Only fetch the recall list once the user has accepted logging.
+    enabled: consent === "accepted",
   });
 
   const params = {
@@ -57,7 +61,7 @@ export default function Browse() {
   });
 
   const ask = useMutation({
-    mutationFn: nlSearch,
+    mutationFn: (q: string) => nlSearch(q, { record: consent === "accepted" }),
     onSuccess: (parsed) => {
       setAskError(null);
       // Each Ask is a full replacement: the LLM saw the whole user intent.
@@ -195,11 +199,44 @@ export default function Browse() {
             </div>
           )}
         </div>
-        <p className="mt-2 text-[11px] text-slate-500 italic">
-          Heads up — your queries are saved server-side (table{" "}
-          <code className="not-italic font-mono bg-slate-100 px-1 rounded">search_logs</code>
-          ) so the agent can be improved. The recent list above is a recall
-          shortcut: click any entry to re-run it.
+        <p className="mt-2 text-[11px] text-slate-600 leading-relaxed">
+          <span className="inline-flex items-center gap-1 mr-1 px-1.5 py-0.5
+                           rounded bg-amber-100 text-amber-900 font-bold not-italic">
+            <span aria-hidden="true">⚠</span> Heads up
+          </span>
+          {consent === "accepted" ? (
+            <>
+              your queries are saved server-side (table{" "}
+              <code className="font-mono bg-slate-100 px-1 rounded">search_logs</code>
+              ) so the agent can be improved. The recall list above is a
+              shortcut: click any entry to re-run it.{" "}
+              <button
+                type="button"
+                onClick={() => setConsent("rejected")}
+                className="underline underline-offset-2 hover:text-slate-900"
+              >
+                opt out
+              </button>
+            </>
+          ) : consent === "rejected" ? (
+            <>
+              search-logging is <strong>off</strong> — your queries stay in
+              your browser only and the recall list is disabled. The agent
+              still works.{" "}
+              <button
+                type="button"
+                onClick={() => setConsent("accepted")}
+                className="underline underline-offset-2 hover:text-slate-900"
+              >
+                opt in
+              </button>
+            </>
+          ) : (
+            <>
+              answer the consent banner first to choose whether your queries
+              are recorded server-side. The agent works either way.
+            </>
+          )}
         </p>
 
         <div className="mt-3 flex flex-wrap gap-1.5">

@@ -3,6 +3,7 @@ import { Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
+import ConsentBanner from "./components/ConsentBanner";
 import ContributeModal from "./components/ContributeModal";
 import SourcesDrawer from "./components/SourcesDrawer";
 
@@ -141,6 +142,7 @@ export default function App() {
 
       {showContribute && <ContributeModal onClose={() => setShowContribute(false)} />}
       {showSources && <SourcesDrawer onClose={() => setShowSources(false)} />}
+      <ConsentBanner />
     </div>
   );
 }

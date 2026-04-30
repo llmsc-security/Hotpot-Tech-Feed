@@ -85,11 +85,16 @@ export async function getYears(): Promise<YearBucket[]> {
   return resp.json();
 }
 
-export async function nlSearch(query: string): Promise<NLFilter> {
+export async function nlSearch(
+  query: string,
+  opts: { record?: boolean } = {}
+): Promise<NLFilter> {
+  const body: { query: string; record?: boolean } = { query };
+  if (opts.record === false) body.record = false;
   const resp = await fetch(`${BASE}/items/nl-search`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ query }),
+    body: JSON.stringify(body),
   });
   if (!resp.ok) throw new Error(`nl-search failed: ${resp.status}`);
   return resp.json();

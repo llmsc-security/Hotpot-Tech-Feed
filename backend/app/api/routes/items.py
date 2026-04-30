@@ -119,6 +119,7 @@ def list_years(db: Session = Depends(get_db)):
 
 class NLSearchIn(BaseModel):
     query: str
+    record: bool = True  # honored after the user has accepted the consent banner
 
 
 @router.post("/nl-search")
@@ -139,11 +140,12 @@ def nl_search(payload: NLSearchIn = Body(...), db: Session = Depends(get_db)):
     current_year = datetime.now(timezone.utc).year
     parsed = nl_filter(raw, current_year=current_year)
 
-    try:
-        db.add(SearchLog(query=raw, parsed_filters=parsed))
-        db.commit()
-    except Exception:
-        db.rollback()  # logging is best-effort — never fail the user's query
+    if payload.record:
+        try:
+            db.add(SearchLog(query=raw, parsed_filters=parsed))
+            db.commit()
+        except Exception:
+            db.rollback()  # logging is best-effort — never fail the user's query
 
     return parsed
 
