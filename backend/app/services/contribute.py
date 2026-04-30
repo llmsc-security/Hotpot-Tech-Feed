@@ -1,7 +1,15 @@
-"""User contribution: accept a URL, fetch + clean it via LLM, ingest as an Item.
+"""User contribution: a two-stage flow.
 
-Errors are surfaced as structured `ContributeError` so the API layer can return
-helpful guidance to the user (rather than a generic 500).
+  Stage 1 — classify_url(db, url)
+        Validates + fetches the URL, picks the best title/excerpt, asks the
+        LLM for ranked candidate categories, returns metadata for the user
+        to review. Nothing is persisted yet.
+
+  Stage 2 — commit_url(db, url, title, excerpt, category, ...)
+        Persists the Item under the user-confirmed category.
+
+The legacy single-shot `contribute_url` is kept as a convenience wrapper:
+classify, then commit with the LLM's top candidate.
 """
 from __future__ import annotations
 
@@ -9,6 +17,7 @@ import html as _html
 import re
 import uuid
 from datetime import datetime, timezone
+from typing import Any, Iterable
 from urllib.parse import urlparse
 
 import httpx
@@ -49,7 +58,7 @@ class ContributeError(Exception):
         self.hint = hint
 
 
-def _extract(html: str, regexes: list[re.Pattern[str]]) -> str | None:
+def _extract(html: str, regexes: Iterable[re.Pattern[str]]) -> str | None:
     for rx in regexes:
         m = rx.search(html)
         if m:
@@ -60,18 +69,11 @@ def _extract(html: str, regexes: list[re.Pattern[str]]) -> str | None:
 
 
 def _best_title(html: str) -> str | None:
-    """Prefer whichever of <title> / og:title is longer and meaningful.
-
-    A bare og:title like "Archive" matches any other title containing the
-    word "archive" via fuzzy dedup — bad. Pick the one that carries more
-    signal, and reject everything ≤ 2 words / ≤ 5 chars.
-    """
     candidates: list[str] = []
     for rx in (_TITLE_RE, _OG_TITLE_RE):
         m = rx.search(html)
         if m:
-            t = _html.unescape(m.group(1)).strip()
-            t = re.sub(r"\s+", " ", t)
+            t = re.sub(r"\s+", " ", _html.unescape(m.group(1)).strip())
             if t:
                 candidates.append(t)
     candidates = [c for c in candidates if len(c) > 5 and len(c.split()) >= 2]
@@ -154,7 +156,7 @@ def _get_or_create_user_source(db: Session) -> Source:
         url=USER_SOURCE_URL,
         kind=SourceKind.html,
         language="en",
-        trust_score=0.4,  # user-submitted, slightly lower trust
+        trust_score=0.4,
         health_status=HealthStatus.ok,
         status=SourceStatus.active,
         extra={"user_contributed": True},
@@ -164,32 +166,45 @@ def _get_or_create_user_source(db: Session) -> Source:
     return src
 
 
-def contribute_url(db: Session, url: str) -> dict:
-    """Validate, fetch, classify, dedup, and persist a user-submitted URL.
+def _existing_to_dict(existing: Item) -> dict[str, Any]:
+    return {
+        "duplicate": True,
+        "item_id": str(existing.id),
+        "url": existing.canonical_url,
+        "title": existing.title,
+        "excerpt": existing.excerpt,
+        "primary_category": existing.primary_category,
+        "content_type": existing.content_type.value,
+        "candidates": [],
+        "tags": [t.tag for t in existing.tags if not t.tag.startswith("topic:")],
+    }
 
-    Returns a dict with keys:
-      ok (bool), item_id, title, content_type, topics, tags, duplicate (bool)
-    Raises ContributeError on any user-correctable failure.
+
+# ---------- Stage 1: classify ----------
+
+def classify_url(db: Session, url: str) -> dict[str, Any]:
+    """Fetch + classify a URL. Returns metadata for the user to review.
+    Does NOT persist anything new (but reports duplicates if found).
     """
     url = _validate_url(url)
     html_text = _fetch(url)
 
-    title = _extract(html_text, [_OG_TITLE_RE, _TITLE_RE])
+    title = _best_title(html_text)
     if not title:
         raise ContributeError(
-            "We couldn't find a <title> on the page.",
-            "Make sure the URL points to an article page (it should have a clear page title), not a homepage or app shell.",
+            "We couldn't find a usable <title> on the page.",
+            "Make sure the URL points to an article page (with a clear page title), not a homepage or app shell.",
         )
     title = title[:1024]
 
     excerpt = _extract(html_text, [_OG_DESC_RE, _DESC_RE])
     if not excerpt:
-        # Fall back to first ~800 chars of stripped body
         body = _strip_tags(html_text)[:1500]
         excerpt = body if len(body) > 80 else None
 
-    src = _get_or_create_user_source(db)
     canonical = canonicalize_url(url)
+
+    src = _get_or_create_user_source(db)
     raw = RawItem(
         source_id=src.id,
         url=canonical,
@@ -203,52 +218,150 @@ def contribute_url(db: Session, url: str) -> dict:
 
     existing = dedup.find_dedup_target(db, raw, canonical)
     if existing is not None:
-        return {
-            "ok": True,
-            "duplicate": True,
-            "item_id": str(existing.id),
-            "title": existing.title,
-            "content_type": existing.content_type.value,
-            "topics": [t.tag.removeprefix("topic:") for t in existing.tags if t.tag.startswith("topic:")],
-            "tags": [t.tag for t in existing.tags if not t.tag.startswith("topic:")],
-        }
+        return _existing_to_dict(existing)
 
-    # Classify with the LLM
+    # Ask the LLM for ranked categories
     tag_result = tag_item(title, excerpt)
-    topics = tag_result.get("topics") or ["Other"]
-    tags = tag_result.get("tags") or []
-    ctype_str = tag_result.get("content_type") or "other"
+    topics = [t for t in (tag_result.get("topics") or []) if t]
+    if not topics:
+        topics = ["Other"]
+    candidates = []
+    for i, t in enumerate(topics[:3]):
+        candidates.append({"category": t, "confidence": round(max(0.4, 1.0 - i * 0.15), 2)})
+
+    return {
+        "duplicate": False,
+        "url": canonical,
+        "title": title,
+        "excerpt": excerpt,
+        "candidates": candidates,
+        "content_type": tag_result.get("content_type", "other"),
+        "tags": [str(t).lower()[:32] for t in (tag_result.get("tags") or [])][:5],
+    }
+
+
+# ---------- Stage 2: commit ----------
+
+def commit_url(
+    db: Session,
+    url: str,
+    title: str,
+    excerpt: str | None,
+    category: str | None,
+    candidates: list[dict[str, Any]] | None = None,
+    content_type: str = "other",
+    tags: list[str] | None = None,
+) -> dict[str, Any]:
+    """Persist a classified URL using the user-confirmed category."""
+    url = _validate_url(url)
+    canonical = canonicalize_url(url)
+    title = (title or "").strip()
+    if not title or len(title) < 3:
+        raise ContributeError(
+            "Missing title.",
+            "Re-run classification to refresh the title before committing.",
+        )
+
+    src = _get_or_create_user_source(db)
+
+    # Re-check dedup at commit time — someone else might have inserted in between.
+    raw = RawItem(
+        source_id=src.id,
+        url=canonical,
+        title=title,
+        authors=[],
+        published_at=None,
+        language="en",
+        excerpt=excerpt,
+        content_type=ContentType.other,
+    )
+    existing = dedup.find_dedup_target(db, raw, canonical)
+    if existing is not None:
+        return _existing_to_dict(existing)
+
     try:
-        ctype = ContentType(ctype_str)
+        ctype = ContentType(content_type)
     except ValueError:
         ctype = ContentType.other
+
+    primary = (category or "").strip()[:64] or None
+    if primary is None and candidates:
+        primary = candidates[0].get("category")
+
     item = Item(
         source_id=src.id,
         canonical_url=canonical,
-        title=title,
+        title=title[:1024],
         authors=[],
         published_at=datetime.now(timezone.utc),
         language="en",
         excerpt=excerpt,
         content_type=ctype,
+        primary_category=primary,
         is_canonical=True,
     )
     db.add(item)
     db.flush()
-    for topic in topics:
-        db.add(ItemTag(item_id=item.id, tag=f"topic:{topic}", confidence=1.0, source="llm"))
-    for tag in tags:
-        db.add(ItemTag(item_id=item.id, tag=str(tag).lower()[:32], confidence=0.9, source="llm"))
+
+    seen_topics: set[str] = set()
+    for c in candidates or []:
+        cat = (c.get("category") or "").strip()
+        if not cat or cat in seen_topics:
+            continue
+        seen_topics.add(cat)
+        db.add(ItemTag(
+            item_id=item.id,
+            tag=f"topic:{cat}"[:64],
+            confidence=float(c.get("confidence") or 1.0),
+            source="llm",
+        ))
+    if primary and primary not in seen_topics:
+        # User typed a brand-new category that wasn't in the LLM's suggestions.
+        db.add(ItemTag(
+            item_id=item.id,
+            tag=f"topic:{primary}"[:64],
+            confidence=1.0,
+            source="user",
+        ))
+    for t in tags or []:
+        db.add(ItemTag(
+            item_id=item.id,
+            tag=str(t).lower()[:32],
+            confidence=0.9,
+            source="llm",
+        ))
     db.add(ItemTag(item_id=item.id, tag="contrib:user", confidence=1.0, source="user"))
 
-    log.info("user contribution accepted", url=canonical, item_id=str(item.id))
+    log.info("user contribution committed",
+             url=canonical, item_id=str(item.id), category=primary)
 
     return {
         "ok": True,
         "duplicate": False,
         "item_id": str(item.id),
+        "url": canonical,
         "title": title,
+        "primary_category": primary,
         "content_type": ctype.value,
-        "topics": topics,
-        "tags": tags,
     }
+
+
+# ---------- Legacy convenience wrapper ----------
+
+def contribute_url(db: Session, url: str) -> dict[str, Any]:
+    """Single-shot: classify and commit with the LLM's top candidate."""
+    classified = classify_url(db, url)
+    if classified["duplicate"]:
+        return {**classified, "ok": True}
+    candidates = classified["candidates"]
+    cat = candidates[0]["category"] if candidates else None
+    return commit_url(
+        db,
+        url=classified["url"],
+        title=classified["title"],
+        excerpt=classified["excerpt"],
+        category=cat,
+        candidates=candidates,
+        content_type=classified["content_type"],
+        tags=classified["tags"],
+    )

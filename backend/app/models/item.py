@@ -60,6 +60,9 @@ class Item(Base):
     content_type: Mapped[ContentType] = mapped_column(
         Enum(ContentType, name="content_type"), default=ContentType.other, nullable=False
     )
+    primary_category: Mapped[Optional[str]] = mapped_column(
+        String(64), nullable=True, index=True
+    )
     lab: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
     venue: Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
 

@@ -145,3 +145,76 @@ export async function contributeUrl(url: string): Promise<ContributeResult> {
   }
   return resp.json();
 }
+
+export interface CategoryCandidate {
+  category: string;
+  confidence: number;
+}
+
+export interface ClassifyResult {
+  duplicate: boolean;
+  url: string;
+  title: string;
+  excerpt: string | null;
+  candidates: CategoryCandidate[];
+  content_type: string;
+  tags: string[];
+  // duplicate-only:
+  item_id?: string;
+  primary_category?: string | null;
+}
+
+export interface CommitInput {
+  url: string;
+  title: string;
+  excerpt: string | null;
+  category: string | null;
+  candidates: CategoryCandidate[];
+  content_type: string;
+  tags: string[];
+}
+
+export async function classifyContribute(url: string): Promise<ClassifyResult> {
+  const resp = await fetch(`${BASE}/contribute/classify`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ url }),
+  });
+  if (resp.status === 422) {
+    const body = await resp.json().catch(() => ({}));
+    const detail = body?.detail ?? {};
+    throw new ContributeError(detail.message ?? "Invalid URL", detail.hint);
+  }
+  if (!resp.ok) {
+    throw new ContributeError(`Server error (${resp.status}). Please try again.`);
+  }
+  return resp.json();
+}
+
+export async function commitContribute(input: CommitInput): Promise<ContributeResult> {
+  const resp = await fetch(`${BASE}/contribute/commit`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(input),
+  });
+  if (resp.status === 422) {
+    const body = await resp.json().catch(() => ({}));
+    const detail = body?.detail ?? {};
+    throw new ContributeError(detail.message ?? "Could not commit", detail.hint);
+  }
+  if (!resp.ok) {
+    throw new ContributeError(`Server error (${resp.status}). Please try again.`);
+  }
+  return resp.json();
+}
+
+export interface CategoryBucket {
+  category: string;
+  count: number;
+}
+
+export async function listCategories(): Promise<CategoryBucket[]> {
+  const resp = await fetch(`${BASE}/items/categories`);
+  if (!resp.ok) throw new Error(`categories fetch failed: ${resp.status}`);
+  return resp.json();
+}

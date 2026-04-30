@@ -101,6 +101,20 @@ def list_items(
     return ItemList(items=items_out, total=total, limit=limit, offset=offset)
 
 
+@router.get("/categories")
+def list_categories(db: Session = Depends(get_db)):
+    """Distinct primary_category values with item counts. Powers the contribute UI's
+    "existing categories" hint and frontend chips."""
+    rows = db.execute(
+        select(Item.primary_category, func.count())
+        .where(Item.is_canonical.is_(True))
+        .where(Item.primary_category.is_not(None))
+        .group_by(Item.primary_category)
+        .order_by(func.count().desc(), Item.primary_category)
+    ).all()
+    return [{"category": c, "count": int(n)} for (c, n) in rows]
+
+
 @router.get("/years")
 def list_years(db: Session = Depends(get_db)):
     """Distinct years present in the corpus, with item counts. Useful for the year-filter chips."""
@@ -190,6 +204,7 @@ def _to_out(item: Item) -> ItemOut:
         language=item.language,
         excerpt=item.excerpt,
         content_type=item.content_type,
+        primary_category=item.primary_category,
         lab=item.lab,
         venue=item.venue,
         summary=item.summary,

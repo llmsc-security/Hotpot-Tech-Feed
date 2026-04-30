@@ -30,6 +30,7 @@ class ItemOut(BaseModel):
     language: str
     excerpt: Optional[str]
     content_type: ContentType
+    primary_category: Optional[str] = None
     lab: Optional[str]
     venue: Optional[str]
     summary: Optional[str]
