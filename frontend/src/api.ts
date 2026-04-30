@@ -95,6 +95,17 @@ export async function nlSearch(query: string): Promise<NLFilter> {
   return resp.json();
 }
 
+export interface RecentSearch {
+  query: string;
+  last_used_at: string;
+}
+
+export async function recentSearches(limit = 20): Promise<RecentSearch[]> {
+  const resp = await fetch(`${BASE}/items/recent-searches?limit=${limit}`);
+  if (!resp.ok) throw new Error(`recent-searches failed: ${resp.status}`);
+  return resp.json();
+}
+
 export interface ContributeResult {
   ok: boolean;
   duplicate: boolean;

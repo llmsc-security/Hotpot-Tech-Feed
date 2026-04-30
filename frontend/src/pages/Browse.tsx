@@ -1,7 +1,7 @@
-import { useState } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
+import { useEffect, useRef, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listItems, nlSearch, type NLFilter } from "../api";
+import { listItems, nlSearch, recentSearches, type NLFilter } from "../api";
 import ItemCard from "../components/ItemCard";
 
 const TIPS = [
@@ -30,6 +30,15 @@ export default function Browse() {
   const [filters, setFilters] = useState<Filters>(DEFAULT_FILTERS);
   const [askError, setAskError] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const inputWrapRef = useRef<HTMLDivElement | null>(null);
+  const qc = useQueryClient();
+
+  const history = useQuery({
+    queryKey: ["recent-searches"],
+    queryFn: () => recentSearches(20),
+    staleTime: 30_000,
+  });
 
   const params = {
     limit: 50,
@@ -58,12 +67,29 @@ export default function Browse() {
       setFilters(next);
       const summary = describeFilters(next);
       setExplanation(summary || "no filters extracted — showing everything");
+      // The backend just logged this query — refresh the recall list.
+      qc.invalidateQueries({ queryKey: ["recent-searches"] });
+      setHistoryOpen(false);
     },
     onError: (err: Error) => {
       setAskError(err.message);
       setExplanation(null);
     },
   });
+
+  // Close the history dropdown when clicking outside the input area.
+  useEffect(() => {
+    function onDocClick(e: MouseEvent) {
+      if (
+        inputWrapRef.current &&
+        !inputWrapRef.current.contains(e.target as Node)
+      ) {
+        setHistoryOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", onDocClick);
+    return () => document.removeEventListener("mousedown", onDocClick);
+  }, []);
 
   function runAsk(text?: string) {
     const v = (text ?? askInput).trim();
@@ -104,13 +130,15 @@ export default function Browse() {
           </span>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2">
+        <div ref={inputWrapRef} className="relative flex flex-wrap items-center gap-2">
           <input
             type="text"
             value={askInput}
             onChange={(e) => setAskInput(e.target.value)}
+            onFocus={() => setHistoryOpen(true)}
             onKeyDown={(e) => {
               if (e.key === "Enter") runAsk();
+              if (e.key === "Escape") setHistoryOpen(false);
             }}
             placeholder="describe what you want — e.g. ‘ML papers from arxiv this year’"
             className="flex-1 min-w-[260px] border border-slate-300 rounded-lg px-3 py-2.5 text-sm
@@ -128,7 +156,51 @@ export default function Browse() {
             <span aria-hidden="true">✨</span>
             <span>{ask.isPending ? "Thinking…" : "Ask"}</span>
           </button>
+
+          {historyOpen && history.data && history.data.length > 0 && (
+            <div
+              className="absolute z-30 left-0 right-0 top-[calc(100%+4px)]
+                         max-h-72 overflow-y-auto rounded-lg border border-slate-200
+                         bg-white shadow-lg text-sm"
+            >
+              <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide
+                              text-slate-500 border-b border-slate-100 flex items-center justify-between">
+                <span>recent queries</span>
+                <span className="opacity-70">esc to close</span>
+              </div>
+              {history.data
+                .filter((h) =>
+                  askInput.trim()
+                    ? h.query.toLowerCase().includes(askInput.toLowerCase())
+                    : true
+                )
+                .slice(0, 12)
+                .map((h) => (
+                  <button
+                    key={h.query + h.last_used_at}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      runAsk(h.query);
+                    }}
+                    className="block w-full text-left px-3 py-1.5 hover:bg-slate-50
+                               border-b border-slate-50 last:border-0"
+                  >
+                    <span className="text-slate-800">{h.query}</span>
+                    <span className="float-right text-xs text-slate-400">
+                      {formatRelative(h.last_used_at)}
+                    </span>
+                  </button>
+                ))}
+            </div>
+          )}
         </div>
+        <p className="mt-2 text-[11px] text-slate-500 italic">
+          Heads up — your queries are saved server-side (table{" "}
+          <code className="not-italic font-mono bg-slate-100 px-1 rounded">search_logs</code>
+          ) so the agent can be improved. The recent list above is a recall
+          shortcut: click any entry to re-run it.
+        </p>
 
         <div className="mt-3 flex flex-wrap gap-1.5">
           <span className="text-xs text-slate-500 mr-1">try:</span>
@@ -219,4 +291,18 @@ function describeFilters(f: Filters): string {
   if (f.q) parts.push(`title ~ ${f.q}`);
   if (f.sort && f.sort !== "date_desc") parts.push(`sort = ${f.sort}`);
   return parts.join(" · ");
+}
+
+function formatRelative(iso: string): string {
+  const t = new Date(iso).getTime();
+  const diff = Date.now() - t;
+  if (Number.isNaN(t)) return "";
+  const m = Math.round(diff / 60000);
+  if (m < 1) return "just now";
+  if (m < 60) return `${m}m ago`;
+  const h = Math.round(m / 60);
+  if (h < 24) return `${h}h ago`;
+  const d = Math.round(h / 24);
+  if (d < 30) return `${d}d ago`;
+  return new Date(t).toISOString().slice(0, 10);
 }

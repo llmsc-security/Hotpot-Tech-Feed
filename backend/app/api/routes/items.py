@@ -11,6 +11,7 @@ from sqlalchemy.orm import Session, selectinload
 
 from app.core.db import get_db
 from app.models.item import ContentType, Item, ItemTag
+from app.models.search_log import SearchLog
 from app.models.source import Source
 from app.schemas.item import ItemList, ItemOut, TagOut
 
@@ -121,11 +122,12 @@ class NLSearchIn(BaseModel):
 
 
 @router.post("/nl-search")
-def nl_search(payload: NLSearchIn = Body(...)):
+def nl_search(payload: NLSearchIn = Body(...), db: Session = Depends(get_db)):
     """Translate a natural-language query into structured filters via the LLM.
 
-    Returns {topic?, content_type?, source?, year?, q?}. The frontend applies
-    these as if the user had filled in the dropdowns + search box manually.
+    Returns {topic?, content_type?, source?, year?, q?, sort?}. The frontend
+    applies these as filter chips. Every query is recorded in `search_logs`
+    so we can study how people search and improve the prompt over time.
     """
     from app.services.llm import nl_filter
 
@@ -136,7 +138,29 @@ def nl_search(payload: NLSearchIn = Body(...)):
         raise HTTPException(400, "query too long (>500 chars)")
     current_year = datetime.now(timezone.utc).year
     parsed = nl_filter(raw, current_year=current_year)
+
+    try:
+        db.add(SearchLog(query=raw, parsed_filters=parsed))
+        db.commit()
+    except Exception:
+        db.rollback()  # logging is best-effort — never fail the user's query
+
     return parsed
+
+
+@router.get("/recent-searches")
+def recent_searches(
+    db: Session = Depends(get_db),
+    limit: int = Query(20, ge=1, le=100),
+):
+    """Most recent distinct NL queries — for the input's recall dropdown."""
+    rows = db.execute(
+        select(SearchLog.query, func.max(SearchLog.created_at).label("ts"))
+        .group_by(SearchLog.query)
+        .order_by(func.max(SearchLog.created_at).desc())
+        .limit(limit)
+    ).all()
+    return [{"query": q, "last_used_at": ts.isoformat()} for (q, ts) in rows]
 
 
 @router.get("/{item_id}", response_model=ItemOut)
