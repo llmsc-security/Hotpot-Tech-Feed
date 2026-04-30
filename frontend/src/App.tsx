@@ -3,6 +3,7 @@ import { Link, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
+import CommunityModal from "./components/CommunityModal";
 import ConsentBanner from "./components/ConsentBanner";
 import SourcesDrawer from "./components/SourcesDrawer";
 
@@ -51,8 +52,10 @@ function CorpusIcon({ className = "" }: { className?: string }) {
 }
 
 function HeaderRight({
+  onShowCommunity,
   onShowSources,
 }: {
+  onShowCommunity: () => void;
   onShowSources: () => void;
 }) {
   const { data } = useQuery({
@@ -67,8 +70,9 @@ function HeaderRight({
 
   return (
     <div className="flex items-center gap-3">
-      <Link
-        to="/community"
+      <button
+        type="button"
+        onClick={onShowCommunity}
         className="inline-flex items-center gap-1.5 rounded-full
                    bg-brand-amber/95 hover:bg-brand-amber text-brand-dark
                    px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm"
@@ -76,7 +80,7 @@ function HeaderRight({
       >
         <span aria-hidden="true">🔥＋</span>
         <span>Community</span>
-      </Link>
+      </button>
       <button
         type="button"
         onClick={onShowSources}
@@ -109,6 +113,7 @@ function HeaderRight({
 
 export default function App() {
   const [showSources, setShowSources] = useState(false);
+  const [showCommunity, setShowCommunity] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -118,7 +123,10 @@ export default function App() {
             <span className="text-2xl">🌶️</span>
             <span className="font-serif text-2xl font-bold">Hotpot Tech Feed</span>
           </Link>
-          <HeaderRight onShowSources={() => setShowSources(true)} />
+          <HeaderRight
+            onShowCommunity={() => setShowCommunity(true)}
+            onShowSources={() => setShowSources(true)}
+          />
         </div>
       </header>
 
@@ -132,6 +140,7 @@ export default function App() {
         self-hosted LLM
       </footer>
 
+      {showCommunity && <CommunityModal onClose={() => setShowCommunity(false)} />}
       {showSources && <SourcesDrawer onClose={() => setShowSources(false)} />}
       <ConsentBanner />
     </div>

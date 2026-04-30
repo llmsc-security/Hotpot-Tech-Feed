@@ -5,7 +5,6 @@ import { BrowserRouter, Route, Routes } from "react-router-dom";
 
 import App from "./App";
 import Browse from "./pages/Browse";
-import Community from "./pages/Community";
 import "./index.css";
 
 const queryClient = new QueryClient({
@@ -19,7 +18,6 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
         <Routes>
           <Route path="/" element={<App />}>
             <Route index element={<Browse />} />
-            <Route path="community" element={<Community />} />
           </Route>
         </Routes>
       </BrowserRouter>
