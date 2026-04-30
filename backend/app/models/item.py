@@ -12,6 +12,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Index,
+    Integer,
     String,
     Text,
     func,
@@ -80,6 +81,9 @@ class Item(Base):
 
     # ---- ranking signal ----
     score: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    click_count: Mapped[int] = mapped_column(
+        Integer, default=0, server_default="0", nullable=False, index=True
+    )
 
     # ---- relationships ----
     source = relationship("Source", back_populates="items")

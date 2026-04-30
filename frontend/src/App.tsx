@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Outlet } from "react-router-dom";
+import { Link, Outlet } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
@@ -70,6 +70,17 @@ function HeaderRight({
 
   return (
     <div className="flex items-center gap-3">
+      <Link
+        to="/community"
+        className="inline-flex items-center gap-1.5 rounded-full
+                   bg-white/10 hover:bg-white/15 border border-white/15
+                   hover:border-white/25 text-slate-200 hover:text-white
+                   px-3 py-1.5 text-xs font-medium transition-colors"
+        title="See community-contributed URLs ranked by clicks"
+      >
+        <span aria-hidden="true">🔥</span>
+        <span>Community</span>
+      </Link>
       <button
         type="button"
         onClick={onContribute}

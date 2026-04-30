@@ -44,6 +44,16 @@ if [ -f "$WORK/manifest.json" ]; then
     sed 's/^/    /' "$WORK/manifest.json"
 fi
 
+# Recover .env if the new host doesn't already have one. Secrets (DB password,
+# OPENAI_API_KEY, SMTP key) are PC-specific so we only do this when the local
+# .env is genuinely missing — never silently overwrite a working config.
+if [ ! -f "$ROOT/.env" ] && [ -f "$WORK/env.backup" ]; then
+    log "No local .env found — restoring from archive's env.backup"
+    cp "$WORK/env.backup" "$ROOT/.env"
+elif [ -f "$WORK/env.backup" ]; then
+    warn "Local .env already exists; archive ships an env.backup — diff with: diff .env <(tar -xzOf '$ARCHIVE' env.backup)"
+fi
+
 if [ ! -f "$WORK/postgres.dump" ]; then
     err "Archive is missing postgres.dump — bad backup?"
     exit 1

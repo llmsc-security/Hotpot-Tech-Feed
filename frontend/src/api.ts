@@ -230,3 +230,26 @@ export async function listContentTypes(): Promise<ContentTypeBucket[]> {
   if (!resp.ok) throw new Error(`content-types fetch failed: ${resp.status}`);
   return resp.json();
 }
+
+export type CommunitySort = "hot" | "recent";
+
+export async function listCommunity(
+  opts: { sort?: CommunitySort; limit?: number; offset?: number } = {},
+): Promise<ItemList> {
+  const qs = new URLSearchParams();
+  qs.set("sort", opts.sort ?? "hot");
+  qs.set("limit", String(opts.limit ?? 50));
+  if (opts.offset) qs.set("offset", String(opts.offset));
+  const resp = await fetch(`${BASE}/items/community?${qs}`);
+  if (!resp.ok) throw new Error(`community fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function bumpItemClick(itemId: string): Promise<void> {
+  // Fire-and-forget — never let a tracking failure block the user's navigation.
+  try {
+    await fetch(`${BASE}/items/${itemId}/click`, { method: "POST", keepalive: true });
+  } catch {
+    /* ignore */
+  }
+}

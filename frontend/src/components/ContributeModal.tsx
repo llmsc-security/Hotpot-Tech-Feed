@@ -320,7 +320,10 @@ function InputStep({
       {pending.length > 0 && (
         <div className="pt-3 mt-2 border-t border-slate-100">
           <p className="text-xs font-medium text-slate-700 mb-1.5">
-            Pending review ({pending.length})
+            Drafts ({pending.length})
+            <span className="ml-1 font-normal text-slate-400">
+              — classified but not yet saved
+            </span>
           </p>
           <ul className="space-y-1.5">
             {pending.map((p) => (
@@ -397,7 +400,7 @@ function ClassifyingStep({
       </ol>
       <p className="text-[11px] text-slate-500 mt-3 italic">
         Closing this dialog is fine — when you reopen it, you'll find your
-        in-progress submission under "Pending review".
+        in-progress submission under "Drafts".
       </p>
     </div>
   );

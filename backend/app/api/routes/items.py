@@ -14,6 +14,7 @@ from app.models.item import ContentType, Item, ItemTag
 from app.models.search_log import SearchLog
 from app.models.source import Source
 from app.schemas.item import ItemList, ItemOut, TagOut
+from app.services.contribute import USER_SOURCE_URL
 
 router = APIRouter(prefix="/items", tags=["items"])
 
@@ -191,6 +192,60 @@ def recent_searches(
     return [{"query": q, "last_used_at": ts.isoformat()} for (q, ts) in rows]
 
 
+@router.get("/community", response_model=ItemList)
+def list_community(
+    db: Session = Depends(get_db),
+    sort: str = Query("hot", pattern="^(hot|recent)$"),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    """Public, read-only feed of user-contributed URLs.
+
+    `hot`    — most-clicked first; ties break to newest.
+    `recent` — newest contribute time first.
+    Items here are auto-accepted at commit time; this endpoint only ranks/lists.
+    """
+    user_src = select(Source.id).where(Source.url == USER_SOURCE_URL)
+    base = (
+        select(Item)
+        .options(selectinload(Item.tags), selectinload(Item.source))
+        .where(Item.is_canonical.is_(True))
+        .where(Item.source_id.in_(user_src))
+    )
+    if sort == "hot":
+        base = base.order_by(Item.click_count.desc(), Item.fetched_at.desc())
+    else:
+        base = base.order_by(Item.fetched_at.desc())
+
+    total = db.execute(
+        select(func.count())
+        .select_from(Item)
+        .where(Item.is_canonical.is_(True))
+        .where(Item.source_id.in_(user_src))
+    ).scalar_one()
+    rows = db.execute(base.limit(limit).offset(offset)).scalars().unique().all()
+    return ItemList(
+        items=[_to_out(it) for it in rows],
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
+
+
+@router.post("/{item_id}/click")
+def bump_click(item_id: uuid.UUID, db: Session = Depends(get_db)):
+    """Increment click_count for an item. Public, no auth — single-host app.
+
+    Done as an atomic UPDATE so concurrent clicks don't lose counts.
+    """
+    item = db.execute(select(Item).where(Item.id == item_id)).scalar_one_or_none()
+    if not item:
+        raise HTTPException(404, "item not found")
+    item.click_count = (item.click_count or 0) + 1
+    db.commit()
+    return {"item_id": str(item.id), "click_count": item.click_count}
+
+
 @router.get("/{item_id}", response_model=ItemOut)
 def get_item(item_id: uuid.UUID, db: Session = Depends(get_db)):
     item = db.execute(
@@ -222,5 +277,6 @@ def _to_out(item: Item) -> ItemOut:
         summary=item.summary,
         commentary=item.commentary,
         score=item.score,
+        click_count=item.click_count or 0,
         tags=[TagOut(tag=t.tag, confidence=t.confidence, source=t.source) for t in item.tags],
     )

@@ -36,6 +36,7 @@ class ItemOut(BaseModel):
     summary: Optional[str]
     commentary: Optional[str]
     score: float
+    click_count: int = 0
     tags: list[TagOut] = Field(default_factory=list)
 
 

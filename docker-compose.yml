@@ -12,6 +12,11 @@
 #   docker compose logs -f gateway backend    # tail logs
 #   docker compose down                       # stop (data volumes persist)
 
+# Lock the compose project name so docker-volume names stay stable regardless
+# of what folder the repo is cloned into. backup.sh / restore.sh rely on the
+# `hotpot-tech-feed_hotpot_*` volume prefix.
+name: hotpot-tech-feed
+
 services:
 
   # ----- The only host-facing service -----

@@ -90,5 +90,7 @@ echo "  $ARCHIVE"
 echo
 echo "To restore on another PC:"
 echo "  1) clone the repo and copy this archive there"
-echo "  2) bash start.sh        (creates an empty stack)"
+echo "     (any folder name works — compose project name is locked to hotpot-tech-feed)"
+echo "  2) bash start.sh        (creates an empty stack; uses local .env if present)"
 echo "  3) bash restore.sh $(basename "$ARCHIVE")"
+echo "     (also auto-recovers .env from the archive if you don't have one locally)"

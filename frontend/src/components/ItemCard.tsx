@@ -1,3 +1,4 @@
+import { bumpItemClick } from "../api";
 import type { Item } from "../types";
 
 const CONTENT_TYPE_LABEL: Record<string, string> = {
@@ -28,6 +29,15 @@ export default function ItemCard({ item }: { item: Item }) {
         {item.source_name && <span className="truncate">{item.source_name}</span>}
         <span>·</span>
         <time>{dateStr}</time>
+        {item.click_count > 0 && (
+          <span
+            className="ml-auto inline-flex items-center gap-0.5 text-amber-700 tabular-nums"
+            title={`${item.click_count} click${item.click_count === 1 ? "" : "s"}`}
+          >
+            <span aria-hidden="true">🔥</span>
+            {item.click_count}
+          </span>
+        )}
       </div>
 
       <h3 className="font-serif text-lg font-bold leading-snug">
@@ -36,6 +46,11 @@ export default function ItemCard({ item }: { item: Item }) {
           target="_blank"
           rel="noreferrer"
           className="hover:text-brand"
+          onClick={() => bumpItemClick(item.id)}
+          onAuxClick={(e) => {
+            // middle-click opens in new tab too — track it.
+            if (e.button === 1) bumpItemClick(item.id);
+          }}
         >
           {item.title}
         </a>

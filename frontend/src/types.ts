@@ -30,6 +30,7 @@ export interface Item {
   summary: string | null;
   commentary: string | null;
   score: number;
+  click_count: number;
   tags: Tag[];
 }
 
