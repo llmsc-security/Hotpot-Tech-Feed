@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { listCommunity, type CommunitySort } from "../api";
+import ContributePanel from "../components/ContributePanel";
 import ItemCard from "../components/ItemCard";
 
 function relativeTime(iso: string): string {
@@ -31,13 +32,12 @@ export default function Community() {
       <header className="flex items-baseline justify-between gap-4 flex-wrap">
         <div>
           <h1 className="font-serif text-3xl font-bold text-slate-900">
-            Community contributions
+            Community
           </h1>
           <p className="text-sm text-slate-600 mt-1 max-w-2xl">
-            URLs submitted via the <strong>I want to contribute</strong> button.
-            Auto-accepted at submit time — no curation gate. Trending is by
-            click count: every time someone opens one of these from the feed,
-            that link's counter ticks up.
+            Share a URL and it lands in the feed instantly — auto-accepted, no
+            curation gate. Below, every contribution ranked by click count:
+            the more people open a link from the feed, the hotter it gets.
           </p>
         </div>
         <Link
@@ -47,6 +47,8 @@ export default function Community() {
           ← back to feed
         </Link>
       </header>
+
+      <ContributePanel />
 
       <div className="flex items-center gap-2">
         <SortChip

@@ -32,10 +32,17 @@ SessionLocal = sessionmaker(bind=engine, autocommit=False, autoflush=False, futu
 
 
 def get_db() -> Iterator[Session]:
-    """FastAPI dependency."""
+    """FastAPI dependency. Commits on a clean handler return; rolls back on
+    exception. Without this, write routes that don't call db.commit() would
+    silently drop their changes when the session closes.
+    """
     db = SessionLocal()
     try:
         yield db
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 

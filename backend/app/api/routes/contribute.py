@@ -12,6 +12,7 @@ from app.services.contribute import (
     classify_url,
     commit_url,
     contribute_url,
+    recategorize,
 )
 
 router = APIRouter(prefix="/contribute", tags=["contribute"])
@@ -56,6 +57,27 @@ def classify(payload: ContributeIn = Body(...), db: Session = Depends(get_db)) -
     """Stage 1: fetch, extract, classify. Returns ranked candidates for review."""
     try:
         return classify_url(db, payload.url)
+    except ContributeError as e:
+        raise _user_error(e)
+
+
+class RecategorizeIn(BaseModel):
+    item_id: str = Field(..., min_length=1, max_length=64)
+    category: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post("/recategorize")
+def recategorize_item(
+    payload: RecategorizeIn = Body(...), db: Session = Depends(get_db)
+) -> Any:
+    """Change an item's primary_category after auto-accept commit."""
+    import uuid as _uuid
+    try:
+        item_id = _uuid.UUID(payload.item_id)
+    except ValueError:
+        raise HTTPException(422, detail={"message": "Invalid item id", "hint": None})
+    try:
+        return recategorize(db, item_id, payload.category)
     except ContributeError as e:
         raise _user_error(e)
 

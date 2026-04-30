@@ -351,16 +351,41 @@ def commit_url(
     }
 
 
-# ---------- Legacy convenience wrapper ----------
+# ---------- Stage 3: change category after the fact ----------
+
+def recategorize(db: Session, item_id: uuid.UUID, category: str) -> dict[str, Any]:
+    """Update an item's primary_category. Used when the user changes their mind
+    after auto-accept has already committed with the LLM's top candidate."""
+    item = db.execute(select(Item).where(Item.id == item_id)).scalar_one_or_none()
+    if item is None:
+        raise ContributeError("Item not found.", "It may have been deleted.")
+    cat = (category or "").strip()[:64]
+    if not cat:
+        raise ContributeError("Empty category.", "Pick one of the candidates or type a new one.")
+    item.primary_category = cat
+    # If this category isn't already attached, add it as a user-source tag.
+    existing = {t.tag for t in item.tags}
+    new_tag = f"topic:{cat}"[:64]
+    if new_tag not in existing:
+        db.add(ItemTag(item_id=item.id, tag=new_tag, confidence=1.0, source="user"))
+    db.flush()
+    return {"ok": True, "item_id": str(item.id), "primary_category": cat}
+
+
+# ---------- Single-shot wrapper (the one we use everywhere now) ----------
 
 def contribute_url(db: Session, url: str) -> dict[str, Any]:
-    """Single-shot: classify and commit with the LLM's top candidate."""
+    """Single-shot: classify and commit with the LLM's top candidate.
+
+    Always includes `candidates` and `tags` in the response so the UI can
+    offer post-hoc recategorization without a second classify call.
+    """
     classified = classify_url(db, url)
     if classified["duplicate"]:
         return {**classified, "ok": True}
     candidates = classified["candidates"]
     cat = candidates[0]["category"] if candidates else None
-    return commit_url(
+    result = commit_url(
         db,
         url=classified["url"],
         title=classified["title"],
@@ -370,3 +395,4 @@ def contribute_url(db: Session, url: str) -> dict[str, Any]:
         content_type=classified["content_type"],
         tags=classified["tags"],
     )
+    return {**result, "candidates": candidates, "tags": classified["tags"]}

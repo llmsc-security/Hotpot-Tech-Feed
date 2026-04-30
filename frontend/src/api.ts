@@ -192,6 +192,32 @@ export async function classifyContribute(url: string): Promise<ClassifyResult> {
   return resp.json();
 }
 
+export interface RecategorizeResult {
+  ok: boolean;
+  item_id: string;
+  primary_category: string;
+}
+
+export async function recategorizeContribution(
+  itemId: string,
+  category: string,
+): Promise<RecategorizeResult> {
+  const resp = await fetch(`${BASE}/contribute/recategorize`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ item_id: itemId, category }),
+  });
+  if (resp.status === 422) {
+    const body = await resp.json().catch(() => ({}));
+    const detail = body?.detail ?? {};
+    throw new ContributeError(detail.message ?? "Could not recategorize", detail.hint);
+  }
+  if (!resp.ok) {
+    throw new ContributeError(`Server error (${resp.status}). Please try again.`);
+  }
+  return resp.json();
+}
+
 export async function commitContribute(input: CommitInput): Promise<ContributeResult> {
   const resp = await fetch(`${BASE}/contribute/commit`, {
     method: "POST",

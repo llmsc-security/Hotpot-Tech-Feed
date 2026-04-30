@@ -4,7 +4,6 @@ import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
 import ConsentBanner from "./components/ConsentBanner";
-import ContributeModal from "./components/ContributeModal";
 import SourcesDrawer from "./components/SourcesDrawer";
 
 const REPO_URL = "https://github.com/llmsc-security/Hotpot-Tech-Feed";
@@ -52,10 +51,8 @@ function CorpusIcon({ className = "" }: { className?: string }) {
 }
 
 function HeaderRight({
-  onContribute,
   onShowSources,
 }: {
-  onContribute: () => void;
   onShowSources: () => void;
 }) {
   const { data } = useQuery({
@@ -73,25 +70,13 @@ function HeaderRight({
       <Link
         to="/community"
         className="inline-flex items-center gap-1.5 rounded-full
-                   bg-white/10 hover:bg-white/15 border border-white/15
-                   hover:border-white/25 text-slate-200 hover:text-white
-                   px-3 py-1.5 text-xs font-medium transition-colors"
-        title="See community-contributed URLs ranked by clicks"
-      >
-        <span aria-hidden="true">🔥</span>
-        <span>Community</span>
-      </Link>
-      <button
-        type="button"
-        onClick={onContribute}
-        className="inline-flex items-center gap-1.5 rounded-full
                    bg-brand-amber/95 hover:bg-brand-amber text-brand-dark
                    px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm"
-        title="Submit a paper, blog post, or news URL"
+        title="Share a URL or browse community contributions ranked by clicks"
       >
-        <span aria-hidden="true">＋</span>
-        <span>I want to contribute</span>
-      </button>
+        <span aria-hidden="true">🔥＋</span>
+        <span>Community</span>
+      </Link>
       <button
         type="button"
         onClick={onShowSources}
@@ -123,21 +108,17 @@ function HeaderRight({
 }
 
 export default function App() {
-  const [showContribute, setShowContribute] = useState(false);
   const [showSources, setShowSources] = useState(false);
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-brand-dark text-white">
         <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
+          <Link to="/" className="flex items-center gap-3 hover:opacity-90">
             <span className="text-2xl">🌶️</span>
             <span className="font-serif text-2xl font-bold">Hotpot Tech Feed</span>
-          </div>
-          <HeaderRight
-            onContribute={() => setShowContribute(true)}
-            onShowSources={() => setShowSources(true)}
-          />
+          </Link>
+          <HeaderRight onShowSources={() => setShowSources(true)} />
         </div>
       </header>
 
@@ -151,7 +132,6 @@ export default function App() {
         self-hosted LLM
       </footer>
 
-      {showContribute && <ContributeModal onClose={() => setShowContribute(false)} />}
       {showSources && <SourcesDrawer onClose={() => setShowSources(false)} />}
       <ConsentBanner />
     </div>
