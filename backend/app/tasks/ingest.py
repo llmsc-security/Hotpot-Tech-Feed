@@ -1,10 +1,15 @@
 """Ingest pipeline: fetch from a source, normalize, dedup, persist.
 
 Usable both from Celery (via @celery_app.task) and synchronously from the CLI.
+
+Parallelism: per-item enrichment (the LLM-bound bottleneck) runs in a thread
+pool with one DB session per worker. Sources can also be fetched concurrently
+in `ingest_all_sync_parallel` since each source uses its own session.
 """
 from __future__ import annotations
 
 import uuid
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -12,6 +17,7 @@ from sqlalchemy.orm import Session
 
 from app.adapters import get_adapter
 from app.core.celery_app import celery_app
+from app.core.config import settings
 from app.core.db import session_scope
 from app.core.logging import get_logger
 from app.models.item import Item
@@ -24,8 +30,30 @@ from app.tasks.enrich import enrich_item
 log = get_logger(__name__)
 
 
-def ingest_source(db: Session, source: Source) -> dict:
-    """Pull a single source. Returns counts: {fetched, new, dup, errors}."""
+def _enrich_one(item_id: uuid.UUID) -> bool:
+    """Re-open a fresh session and enrich a single item by id. Safe to call from a thread."""
+    try:
+        with session_scope() as db:
+            item = db.get(Item, item_id)
+            if item is None:
+                return False
+            enrich_item(db, item)
+            return True
+    except Exception as e:  # pragma: no cover — enrichment is best-effort
+        log.warning("enrichment failed", item_id=str(item_id), err=str(e))
+        return False
+
+
+def ingest_source(db: Session, source: Source, workers: int | None = None) -> dict:
+    """Pull a single source. Returns counts: {fetched, new, dup, errors}.
+
+    Newly-inserted items are enriched in parallel via a thread pool (one DB
+    session per worker). The caller's `db` session is committed before
+    enrichment so workers can see the rows.
+    """
+    if workers is None:
+        workers = settings.ingest_workers
+
     adapter = get_adapter(source)
     counts = {"fetched": 0, "new": 0, "dup": 0, "errors": 0}
     try:
@@ -45,6 +73,7 @@ def ingest_source(db: Session, source: Source) -> dict:
     source.health_status = HealthStatus.ok
     source.last_fetched_at = datetime.now(timezone.utc)
 
+    new_ids: list[uuid.UUID] = []
     for raw in raw_items:
         canonical = canonicalize_url(raw.url)
         try:
@@ -54,7 +83,6 @@ def ingest_source(db: Session, source: Source) -> dict:
             target = None
 
         if target is not None:
-            # Same content, different URL: collapse into the existing dedup group.
             if target.dedup_group_id is None:
                 target.dedup_group_id = uuid.uuid4()
             counts["dup"] += 1
@@ -76,10 +104,21 @@ def ingest_source(db: Session, source: Source) -> dict:
         db.add(item)
         db.flush()
         counts["new"] += 1
-        try:
-            enrich_item(db, item)
-        except Exception as e:  # pragma: no cover — enrichment is best-effort
-            log.warning("enrichment failed", item_id=str(item.id), err=str(e))
+        new_ids.append(item.id)
+
+    # Commit so worker threads (each with their own session) see the new rows.
+    db.commit()
+
+    if not new_ids:
+        return counts
+
+    if workers and workers > 1 and len(new_ids) > 1:
+        log.info("enriching", source=source.name, items=len(new_ids), workers=workers)
+        with ThreadPoolExecutor(max_workers=workers) as ex:
+            list(ex.map(_enrich_one, new_ids))
+    else:
+        for item_id in new_ids:
+            _enrich_one(item_id)
 
     return counts
 
@@ -114,17 +153,50 @@ def ingest_kind(kind: str) -> dict:
     return aggregate
 
 
-def ingest_all_sync() -> dict:
-    """Synchronous full run — what the CLI calls."""
-    aggregate = {"sources": 0, "fetched": 0, "new": 0, "dup": 0, "errors": 0}
+def _ingest_one_source_id(source_id: uuid.UUID, workers: int) -> dict:
+    """Run a full ingest for one source in its own session. Thread-safe."""
     with session_scope() as db:
-        sources = db.execute(
-            select(Source).where(Source.status != SourceStatus.paused)
-        ).scalars().all()
-        for s in sources:
-            log.info("ingesting", source=s.name, kind=s.kind.value)
-            counts = ingest_source(db, s)
+        source = db.get(Source, source_id)
+        if not source or source.status == SourceStatus.paused:
+            return {"fetched": 0, "new": 0, "dup": 0, "errors": 0}
+        log.info("ingesting", source=source.name, kind=source.kind.value)
+        return ingest_source(db, source, workers=workers)
+
+
+def ingest_all_sync(workers: int | None = None, source_workers: int | None = None) -> dict:
+    """Synchronous full run — what the CLI calls.
+
+    Parallelism is two-level:
+      * `source_workers` sources processed concurrently (each with its own session)
+      * Inside each source, `workers` items enriched concurrently
+    """
+    if workers is None:
+        workers = settings.ingest_workers
+    if source_workers is None:
+        source_workers = settings.ingest_source_workers
+
+    aggregate = {"sources": 0, "fetched": 0, "new": 0, "dup": 0, "errors": 0}
+
+    with session_scope() as db:
+        source_ids = [
+            sid for (sid,) in db.execute(
+                select(Source.id).where(Source.status != SourceStatus.paused)
+            ).all()
+        ]
+
+    if source_workers and source_workers > 1 and len(source_ids) > 1:
+        with ThreadPoolExecutor(max_workers=source_workers) as ex:
+            futs = [ex.submit(_ingest_one_source_id, sid, workers) for sid in source_ids]
+            for fut in as_completed(futs):
+                counts = fut.result()
+                aggregate["sources"] += 1
+                for k in ("fetched", "new", "dup", "errors"):
+                    aggregate[k] += counts.get(k, 0)
+    else:
+        for sid in source_ids:
+            counts = _ingest_one_source_id(sid, workers)
             aggregate["sources"] += 1
             for k in ("fetched", "new", "dup", "errors"):
                 aggregate[k] += counts.get(k, 0)
+
     return aggregate

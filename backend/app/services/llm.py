@@ -35,7 +35,12 @@ def _client() -> OpenAI:
 
 
 def _chat(model: str, system: str, user: str, max_tokens: int = 400) -> str:
-    """Single-shot chat completion."""
+    """Single-shot chat completion.
+
+    `extra_body.chat_template_kwargs.enable_thinking=False` disables Qwen3.5's
+    thinking-mode prefix so the model returns clean JSON straight away. vLLM /
+    Qwen ignore unknown extras silently, so this is a no-op on other backends.
+    """
     client = _client()
     resp = client.chat.completions.create(
         model=model,
@@ -45,6 +50,7 @@ def _chat(model: str, system: str, user: str, max_tokens: int = 400) -> str:
         ],
         max_tokens=max_tokens,
         temperature=0.2,
+        extra_body={"chat_template_kwargs": {"enable_thinking": False}},
     )
     return (resp.choices[0].message.content or "").strip()
 
@@ -140,6 +146,105 @@ def commentary(title: str, excerpt: str | None, content_type: str) -> str | None
         return None
 
 
+# ---------- Natural-language filter extraction ----------
+
+_NL_FILTER_SYSTEM = (
+    "You convert a user's free-form search query into a JSON object of filters "
+    "for a CS feed reader. Return strict JSON only — no prose, no markdown. "
+    "All fields are optional; omit them or set to null when not present in the query."
+)
+
+
+def nl_filter(query: str, current_year: int) -> dict[str, Any]:
+    """Extract structured filters from a natural-language search query.
+
+    Returns a dict with optional keys: topic, content_type, source, year, q.
+    Falls back to {"q": query} on any LLM/parse failure so the caller still
+    has something useful.
+    """
+    user = (
+        f"Today's year: {current_year}.\n"
+        f"Allowed topics: {', '.join(t for t in TOPICS if t != 'Other')}\n"
+        f"Allowed content_types: {', '.join(c for c in CONTENT_TYPES if c != 'other')}\n"
+        "Allowed sort values: date_desc (newest), date_asc (oldest), "
+        "fetched_desc (recently ingested), fetched_asc.\n\n"
+        "Important taxonomy hints:\n"
+        "- Posts from major AI labs (OpenAI, DeepMind, Anthropic, Google Research, "
+        "Meta AI, Microsoft Research, NVIDIA, Apple, BAIR, SAIL) are categorized "
+        "as `lab_announcement`, NOT `blog`. If the query mentions one of these labs "
+        "and the word \"blog\" or \"post\", set content_type to `lab_announcement`.\n"
+        "- Plain `blog` is for engineering / company blogs (Vercel, Stripe, Cloudflare, "
+        "GitHub, Netflix, Discord, Airbnb, Spotify, Dropbox, Meta Engineering, etc.).\n"
+        "- arXiv content is `paper`.\n\n"
+        "Output schema: {\n"
+        '  "topic":        one of the allowed topics or null,\n'
+        '  "content_type": one of the allowed content_types or null,\n'
+        '  "source":       short case-insensitive substring of a source name '
+        '(e.g. "arxiv", "openai", "wechat", "deepmind") or null,\n'
+        '  "year":         4-digit integer year (resolve "this year" / "last year") or null,\n'
+        '  "q":            free-text title keyword(s) (only the salient words) or null,\n'
+        '  "sort":         one of the allowed sort values or null\n'
+        "}\n\n"
+        "Examples:\n"
+        '  "ML papers from arxiv this year, newest first"  -> '
+        f'{{"topic":"ML","content_type":"paper","source":"arxiv","year":{current_year},"q":null,"sort":"date_desc"}}\n'
+        '  "openai 2026 blog posts, newest first"          -> '
+        f'{{"topic":null,"content_type":"lab_announcement","source":"openai","year":2026,"q":null,"sort":"date_desc"}}\n'
+        '  "vercel 2025 blog"                              -> '
+        '{"topic":null,"content_type":"blog","source":"vercel","year":2025,"q":null,"sort":null}\n'
+        '  "wechat: large model news"                      -> '
+        '{"topic":null,"content_type":null,"source":"wechat","year":null,"q":"large model","sort":null}\n'
+        '  "robotics tutorials"                            -> '
+        '{"topic":"Robotics","content_type":"tutorial","source":null,"year":null,"q":null,"sort":null}\n'
+        '  "transformer attention"                         -> '
+        '{"topic":null,"content_type":null,"source":null,"year":null,"q":"transformer attention","sort":null}\n\n'
+        f"User query: {query}\n\nRespond with JSON only."
+    )
+    try:
+        raw = _chat(settings.llm_model_tagger, _NL_FILTER_SYSTEM, user, max_tokens=200)
+        data = _extract_json(raw)
+    except Exception as e:  # pragma: no cover
+        log.warning("nl_filter failed", err=str(e))
+        return {"q": query.strip() or None}
+
+    out: dict[str, Any] = {}
+    topic = data.get("topic")
+    if isinstance(topic, str) and topic in TOPICS and topic != "Other":
+        out["topic"] = topic
+
+    ctype = data.get("content_type")
+    if isinstance(ctype, str) and ctype in CONTENT_TYPES and ctype != "other":
+        out["content_type"] = ctype
+
+    source = data.get("source")
+    if isinstance(source, str) and source.strip():
+        out["source"] = source.strip()[:64]
+
+    year = data.get("year")
+    if isinstance(year, int) and 1990 <= year <= current_year + 1:
+        out["year"] = year
+
+    q = data.get("q")
+    if isinstance(q, str) and q.strip():
+        out["q"] = q.strip()[:200]
+
+    sort = data.get("sort")
+    if isinstance(sort, str) and sort in {
+        "date_desc", "date_asc", "fetched_desc", "fetched_asc",
+    }:
+        out["sort"] = sort
+
+    # If the LLM returned valid JSON but every field was null/invalid,
+    # fall back to a plain title-substring search so the UI still does
+    # something with the user's query.
+    if not out:
+        text = query.strip()
+        if text:
+            out["q"] = text[:200]
+
+    return out
+
+
 # ---------- Helpers ----------
 
 _JSON_BLOCK = re.compile(r"\{.*\}", re.S)
@@ -148,6 +253,9 @@ _JSON_BLOCK = re.compile(r"\{.*\}", re.S)
 def _extract_json(s: str) -> dict[str, Any]:
     """Pull the first {...} block out of an LLM response and parse it."""
     s = s.strip()
+    # Strip Qwen3.5 thinking-mode block if it leaked through.
+    if "</think>" in s:
+        s = s.split("</think>", 1)[1].strip()
     # Strip markdown fences if present.
     if s.startswith("```"):
         s = re.sub(r"^```(?:json)?", "", s).rstrip("`").strip()

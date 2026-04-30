@@ -22,6 +22,7 @@ class SourceOut(BaseModel):
     health_status: HealthStatus
     status: SourceStatus
     last_fetched_at: Optional[datetime]
+    item_count: int = 0
 
 
 class SourceList(BaseModel):

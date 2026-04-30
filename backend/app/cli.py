@@ -40,20 +40,26 @@ def seed_sources(path: str) -> None:
 
 
 @cli.command("ingest-now")
-def ingest_now() -> None:
+@click.option("--workers", type=int, default=None,
+              help="Per-item enrichment threads (defaults to INGEST_WORKERS = cpu/2).")
+@click.option("--source-workers", type=int, default=None,
+              help="Sources processed concurrently (default 1).")
+def ingest_now(workers: int | None, source_workers: int | None) -> None:
     """Run a synchronous pull across every active source."""
-    counts = ingest_all_sync()
+    counts = ingest_all_sync(workers=workers, source_workers=source_workers)
     click.echo(json.dumps(counts, indent=2))
 
 
 @cli.command("ingest-source")
 @click.argument("name")
-def ingest_one(name: str) -> None:
+@click.option("--workers", type=int, default=None,
+              help="Per-item enrichment threads (defaults to INGEST_WORKERS = cpu/2).")
+def ingest_one(name: str, workers: int | None) -> None:
     with session_scope() as db:
         source = db.execute(select(Source).where(Source.name == name)).scalar_one_or_none()
         if not source:
             raise click.ClickException(f"no source named {name!r}")
-        counts = ingest_source(db, source)
+        counts = ingest_source(db, source, workers=workers)
         click.echo(json.dumps(counts, indent=2))
 
 
@@ -71,7 +77,11 @@ def list_sources() -> None:
 @cli.command("ingest-deep")
 @click.option("--passes", default=3, show_default=True, help="Number of full ingest passes to run.")
 @click.option("--sleep", default=30, show_default=True, help="Seconds to wait between passes.")
-def ingest_deep(passes: int, sleep: int) -> None:
+@click.option("--workers", type=int, default=None,
+              help="Per-item enrichment threads (defaults to INGEST_WORKERS = cpu/2).")
+@click.option("--source-workers", type=int, default=None,
+              help="Sources processed concurrently (default 1).")
+def ingest_deep(passes: int, sleep: int, workers: int | None, source_workers: int | None) -> None:
     """Crawl aggressively: run multiple full passes with sleeps in between.
 
     Useful for the first bootstrap on a new install — RSS feeds will return
@@ -81,7 +91,7 @@ def ingest_deep(passes: int, sleep: int) -> None:
     aggregate = {"sources": 0, "fetched": 0, "new": 0, "dup": 0, "errors": 0}
     for i in range(1, passes + 1):
         click.echo(f"--- pass {i}/{passes} ---")
-        counts = ingest_all_sync()
+        counts = ingest_all_sync(workers=workers, source_workers=source_workers)
         for k, v in counts.items():
             aggregate[k] = aggregate.get(k, 0) + v if k != "sources" else v
         click.echo(json.dumps(counts, indent=2))

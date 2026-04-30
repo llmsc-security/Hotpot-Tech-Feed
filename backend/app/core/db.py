@@ -21,8 +21,10 @@ class Base(DeclarativeBase):
 engine = create_engine(
     settings.database_url,
     pool_pre_ping=True,
-    pool_size=10,
-    max_overflow=20,
+    # Sized for parallel ingest: each enrichment worker takes a session.
+    pool_size=max(20, settings.ingest_workers + 8),
+    max_overflow=64,
+    pool_timeout=60,
     future=True,
 )
 

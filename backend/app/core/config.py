@@ -5,8 +5,16 @@ key) must come from the environment — never commit real values to .env.
 """
 from __future__ import annotations
 
+import os
+
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _default_ingest_workers() -> int:
+    # LLM-bound: half the CPU cores, capped so a big host doesn't melt
+    # the upstream LLM endpoint (override via INGEST_WORKERS or --workers).
+    return max(1, min(32, (os.cpu_count() or 2) // 2))
 
 
 class Settings(BaseSettings):
@@ -53,10 +61,17 @@ class Settings(BaseSettings):
     # ---------- LLM (Qwen via OpenAI-compatible endpoint) ----------
     openai_base_url: str = "https://api.ai2wj.com/v1"
     openai_api_key: str = "sk-placeholder"
-    llm_model_tagger: str = "qwen3.6"
-    llm_model_summary: str = "qwen3.6"
-    llm_model_commentary: str = "qwen3.6"
+    llm_model_tagger: str = "Qwen/Qwen3.5-397B-A17B"
+    llm_model_summary: str = "Qwen/Qwen3.5-397B-A17B"
+    llm_model_commentary: str = "Qwen/Qwen3.5-397B-A17B"
     llm_timeout_s: float = 30.0
+
+    # ---------- Ingest concurrency ----------
+    # Per-item enrichment is LLM-bound; default to half the available CPU cores.
+    ingest_workers: int = Field(default_factory=_default_ingest_workers)
+    # Source-level concurrency is sequential by default — one source at a time,
+    # with full ingest_workers on its items.
+    ingest_source_workers: int = 1
 
     # ---------- Embeddings ----------
     # Set to false in early dev if you don't want to pull the bge-m3 weights.
