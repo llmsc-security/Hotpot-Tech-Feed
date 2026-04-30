@@ -453,7 +453,10 @@ function ReviewStep({
 
       <div>
         <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-1">
-          Pick a category — Qwen ranked these <span className="text-slate-400">(c1 → c2 → c3)</span>
+          Pick a category — Qwen ranked these{" "}
+          <span className="text-slate-400">
+            (c1, c2 from the curated list · c3 is open / free-form)
+          </span>
         </p>
         <div className="space-y-1.5">
           {candidates.map((c, i) => (
@@ -480,6 +483,12 @@ function ReviewStep({
                 c{i + 1}
               </span>
               <span className="font-medium text-slate-900 flex-1">{c.category}</span>
+              {c.open && (
+                <span className="text-[10px] font-semibold uppercase tracking-wide
+                                 text-amber-800 bg-amber-100 px-1.5 py-0.5 rounded">
+                  open
+                </span>
+              )}
               <span className="text-xs text-slate-400 tabular-nums">
                 {Math.round(c.confidence * 100)}%
               </span>

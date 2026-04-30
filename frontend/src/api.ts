@@ -149,6 +149,7 @@ export async function contributeUrl(url: string): Promise<ContributeResult> {
 export interface CategoryCandidate {
   category: string;
   confidence: number;
+  open?: boolean;
 }
 
 export interface ClassifyResult {
@@ -216,5 +217,16 @@ export interface CategoryBucket {
 export async function listCategories(): Promise<CategoryBucket[]> {
   const resp = await fetch(`${BASE}/items/categories`);
   if (!resp.ok) throw new Error(`categories fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export interface ContentTypeBucket {
+  content_type: string;
+  count: number;
+}
+
+export async function listContentTypes(): Promise<ContentTypeBucket[]> {
+  const resp = await fetch(`${BASE}/items/content-types`);
+  if (!resp.ok) throw new Error(`content-types fetch failed: ${resp.status}`);
   return resp.json();
 }

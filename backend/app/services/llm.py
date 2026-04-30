@@ -58,9 +58,17 @@ def _chat(model: str, system: str, user: str, max_tokens: int = 400) -> str:
 # ---------- Tagging ----------
 
 _TAG_SYSTEM = (
-    "You classify computer science content. Return strict JSON with keys "
-    "topics (array of strings from the allowed topics), content_type (string), "
-    "tags (array of free-form lowercase subfield tags, max 5). No prose, JSON only."
+    "You classify computer science content. Return strict JSON with keys: "
+    "  topics      — array of EXACTLY 2 strings chosen from the allowed topics, "
+    "                 ordered most-relevant first (closed vocabulary). "
+    "  open_topic  — ONE additional short free-form category that best describes "
+    "                 the content even if it's not in the allowed list "
+    "                 (e.g. 'Distributed-Systems', 'DevOps', 'Bioinformatics', "
+    "                 'AI-Safety', 'Cryptography'). 1–3 words, TitleCase, "
+    "                 distinct from the topics array. This is the open-vocabulary slot. "
+    "  content_type — one of the allowed content_types. "
+    "  tags        — array of free-form lowercase subfield tags, max 5. "
+    "No prose, JSON only."
 )
 
 
@@ -80,15 +88,50 @@ def tag_item(title: str, excerpt: str | None) -> dict[str, Any]:
     try:
         raw = _chat(settings.llm_model_tagger, _TAG_SYSTEM, user, max_tokens=300)
         data = _extract_json(raw)
-        topics = [t for t in data.get("topics", []) if t in TOPICS] or ["Other"]
+
+        # Closed-vocabulary slots (must be from TOPICS).
+        allowed = [t for t in (data.get("topics") or []) if t in TOPICS]
+        # Pad to exactly 2 from the curated TOPICS list if the LLM was stingy.
+        seen = set(allowed)
+        for fallback in TOPICS:
+            if len(allowed) >= 2:
+                break
+            if fallback not in seen:
+                allowed.append(fallback)
+                seen.add(fallback)
+        allowed = allowed[:2]
+
+        # Open-vocabulary slot — one free-form category. Anything is allowed
+        # except a duplicate of what's already in `allowed`.
+        open_topic_raw = data.get("open_topic")
+        open_topic: str | None = None
+        if isinstance(open_topic_raw, str):
+            cleaned = re.sub(r"\s+", "-", open_topic_raw.strip())[:48]
+            if cleaned and cleaned not in seen:
+                open_topic = cleaned
+
+        topics = list(allowed)
+        if open_topic:
+            topics.append(open_topic)
+
         ctype = data.get("content_type", "other")
         if ctype not in CONTENT_TYPES:
             ctype = "other"
         tags = [str(t).lower()[:32] for t in (data.get("tags") or [])][:5]
-        return {"topics": topics, "content_type": ctype, "tags": tags}
+        return {
+            "topics": topics,
+            "open_topic": open_topic,
+            "content_type": ctype,
+            "tags": tags,
+        }
     except Exception as e:  # pragma: no cover
         log.warning("tag_item failed", err=str(e))
-        return {"topics": ["Other"], "content_type": "other", "tags": []}
+        return {
+            "topics": ["Other", "ML"],
+            "open_topic": None,
+            "content_type": "other",
+            "tags": [],
+        }
 
 
 # ---------- Summarization ----------

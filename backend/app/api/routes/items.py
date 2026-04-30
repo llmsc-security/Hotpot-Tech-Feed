@@ -115,6 +115,18 @@ def list_categories(db: Session = Depends(get_db)):
     return [{"category": c, "count": int(n)} for (c, n) in rows]
 
 
+@router.get("/content-types")
+def list_content_types(db: Session = Depends(get_db)):
+    """Distinct content_type values with counts."""
+    rows = db.execute(
+        select(Item.content_type, func.count())
+        .where(Item.is_canonical.is_(True))
+        .group_by(Item.content_type)
+        .order_by(func.count().desc())
+    ).all()
+    return [{"content_type": c.value, "count": int(n)} for (c, n) in rows]
+
+
 @router.get("/years")
 def list_years(db: Session = Depends(get_db)):
     """Distinct years present in the corpus, with item counts. Useful for the year-filter chips."""

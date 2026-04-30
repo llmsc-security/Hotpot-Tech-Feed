@@ -220,14 +220,19 @@ def classify_url(db: Session, url: str) -> dict[str, Any]:
     if existing is not None:
         return _existing_to_dict(existing)
 
-    # Ask the LLM for ranked categories
+    # Ask the LLM for ranked categories: 2 closed-vocab + 1 open free-form.
     tag_result = tag_item(title, excerpt)
     topics = [t for t in (tag_result.get("topics") or []) if t]
     if not topics:
         topics = ["Other"]
+    open_topic = tag_result.get("open_topic")
     candidates = []
     for i, t in enumerate(topics[:3]):
-        candidates.append({"category": t, "confidence": round(max(0.4, 1.0 - i * 0.15), 2)})
+        candidates.append({
+            "category": t,
+            "confidence": round(max(0.4, 1.0 - i * 0.15), 2),
+            "open": bool(open_topic and t == open_topic),
+        })
 
     return {
         "duplicate": False,
