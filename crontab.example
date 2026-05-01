@@ -9,24 +9,35 @@
 # to the cloud `/schedule` routine because that one has no DB access.
 
 ROOT=/data/wangjian/wj_code/dl_feed/Hotpot-Tech-Feed
-LOG=$ROOT/logs
+LOG=/data/wangjian/wj_code/dl_feed/Hotpot-Tech-Feed/logs
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-# Every 6 hours: pull all active sources (top up corpus, fill any empty).
-0 */6 * * *  cd $ROOT && docker compose run --rm backend hotpot ingest-now > $LOG/ingest-$(date +\%Y\%m\%d-\%H).log 2>&1
+# Make logs dir after installing:
+#   mkdir -p /data/wangjian/wj_code/dl_feed/Hotpot-Tech-Feed/logs
+
+# Hourly: poll HTML index/sitemap sources. This is the RSS-like path for sites
+# without feeds; canonical URL dedup turns repeated polling into "new only".
+10 * * * *   $ROOT/scripts/cron_hotpot.sh ingest-html >> $LOG/ingest-html.log 2>&1
+
+# Every 2 hours: pull RSS/Atom sources.
+20 */2 * * * $ROOT/scripts/cron_hotpot.sh ingest-rss >> $LOG/ingest-rss.log 2>&1
+
+# Every 6 hours: pull arXiv categories.
+0 */6 * * *  $ROOT/scripts/cron_hotpot.sh ingest-arxiv >> $LOG/ingest-arxiv.log 2>&1
+
+# Daily full pass as a backstop across all active sources.
+0 2 * * *    WORKERS=8 SOURCE_WORKERS=1 $ROOT/scripts/cron_hotpot.sh ingest-now >> $LOG/ingest-full.log 2>&1
 
 # Every 30 minutes: fast pass over only-empty sources (catches just-promoted
 # candidates that the API's auto-ingest may have missed).
-30 * * * *   cd $ROOT && docker compose run --rm backend hotpot ingest-empty > $LOG/ingest-empty.log 2>&1
+30 * * * *   $ROOT/scripts/cron_hotpot.sh ingest-empty >> $LOG/ingest-empty.log 2>&1
 
 # Hourly: source health check (HEAD each URL, mark broken).
-15 * * * *   cd $ROOT && docker compose run --rm backend hotpot health-check-sources > $LOG/health.log 2>&1
+15 * * * *   $ROOT/scripts/cron_hotpot.sh health-check-sources >> $LOG/health.log 2>&1
 
 # Daily 03:00 UTC: re-score sources from click data + LLM noise sample.
-0 3 * * *    cd $ROOT && docker compose run --rm backend hotpot score-sources > $LOG/score.log 2>&1
+0 3 * * *    $ROOT/scripts/cron_hotpot.sh score-sources >> $LOG/score.log 2>&1
 
 # Daily 03:30 UTC: snapshot the DB to backups/ (cheap, ~2 MB).
-30 3 * * *   cd $ROOT && bash backup.sh > $LOG/backup.log 2>&1
-
-# Don't forget: mkdir -p $LOG  before installing.
+30 3 * * *   $ROOT/scripts/cron_hotpot.sh backup >> $LOG/backup.log 2>&1

@@ -82,6 +82,15 @@ Implemented on 2026-05-01:
     original posts, hot posts, and high-read discussion items.
   - FreeBuf, 安全客, 先知, Seebug Paper, 安全脉搏, 嘶吼, SecWiki, 离别歌, 360CERT.
   - 量子位 QbitAI for Chinese AI/tech news.
+- Added cron-polled HTML intake:
+  - `backend/app/adapters/html_index.py` turns ordinary blog/news listing pages
+    into RSS-like sources by extracting article links and relying on canonical
+    URL dedup as the seen-set.
+  - `hotpot ingest-kind html` and `scripts/cron_hotpot.sh ingest-html` let the
+    host crontab poll non-RSS sources separately from RSS/arXiv.
+  - Added capped sources for AI2, Mistral, ByteDance Seed, Supabase, Wiz, plus
+    additional validated RSS/Atom sources across AI labs, infra, security, and
+    independent explainers.
 
 Verified on 2026-05-01:
 
@@ -104,6 +113,8 @@ Remaining rollout:
 - Rebuild backend/gateway after seed/source changes because seed data is baked
   into the backend image and the frontend is baked into the gateway image.
 - Seed the expanded source list, then ingest the new Chinese/security sources.
+- Install or refresh the host crontab from `crontab.example` if HTML index
+  sources should keep acting like feeds without Celery.
 - Add Postgres FTS/`pg_trgm` indexes once query volume justifies migrations.
 - Add source-governance metrics after enough scored items exist.
 - Evaluate BGE-M3/Qdrant hybrid retrieval and local rerankers later on

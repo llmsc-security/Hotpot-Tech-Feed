@@ -108,6 +108,7 @@ hotpot list-sources
 hotpot seed-sources [--file PATH]         # idempotent; updates existing sources
 hotpot ingest-now                          # one full sync pass over every active source
 hotpot ingest-source "arXiv cs.LG"         # pull a single source by name
+hotpot ingest-kind html                    # pull one adapter kind (rss, html, arxiv)
 hotpot ingest-deep [--passes 3 --sleep 30] # multiple passes for aggressive bootstrap
 hotpot enrich-all [--limit 1000]           # backfill summaries on items that lack one
 hotpot list-sources                        # print source rows + health
@@ -244,6 +245,13 @@ Beat schedule (in `app/core/celery_app.py`):
 |-------------------|-------------------------------|
 | every hour @ :15  | `ingest_kind("arxiv")`        |
 | every 15 minutes  | `ingest_kind("rss")`          |
+
+For hosts that should keep crawling without Celery, install
+[`crontab.example`](./crontab.example). It uses
+[`scripts/cron_hotpot.sh`](./scripts/cron_hotpot.sh) with `flock` so repeated
+jobs do not overlap. The `ingest-html` schedule is the RSS-like path for
+ordinary HTML listing pages: `html_index` sources are polled, article URLs are
+extracted with a regex, and canonical URL dedup keeps only new items.
 
 ---
 

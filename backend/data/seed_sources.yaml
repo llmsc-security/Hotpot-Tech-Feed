@@ -36,6 +36,11 @@ sources:
   - { name: "NVIDIA Developer Blog",    kind: rss, url: "https://developer.nvidia.com/blog/feed",             lab: "NVIDIA",              extra: { content_type: blog },             trust_score: 0.8  }
   - { name: "Apple Machine Learning",   kind: rss, url: "https://machinelearning.apple.com/rss.xml",          lab: "Apple ML",            extra: { content_type: lab_announcement }, trust_score: 0.8  }
   - { name: "AWS Machine Learning",     kind: rss, url: "https://aws.amazon.com/blogs/machine-learning/feed/",lab: "AWS",                 extra: { content_type: blog },             trust_score: 0.75 }
+  - { name: "Hugging Face Blog",        kind: rss, url: "https://huggingface.co/blog/feed.xml",               lab: "Hugging Face",        extra: { content_type: blog, max_results: 30, max_age_days: 120 }, trust_score: 0.8 }
+  - { name: "Qwen Team Blog",           kind: rss, url: "https://qwenlm.github.io/blog/index.xml",            lab: "Qwen",                extra: { content_type: lab_announcement, max_results: 25, max_age_days: 365 }, trust_score: 0.88 }
+  - { name: "AllenAI Blog",             kind: html, url: "https://allenai.org/blog",                          lab: "AI2",                 extra: { adapter: html_index, content_type: lab_announcement, link_pattern: '^https://allenai\.org/blog/[^/?#]+$', max_results: 20, candidate_limit: 40, max_age_days: 365 }, trust_score: 0.9 }
+  - { name: "Mistral AI News",          kind: html, url: "https://mistral.ai/sitemap.xml",                    lab: "Mistral AI",          extra: { content_type: lab_announcement, path_pattern: '^https://mistral\.ai/news/', max_results: 30, max_age_days: 365 }, trust_score: 0.86 }
+  - { name: "ByteDance Seed Blog",      kind: html, url: "https://seed.bytedance.com/sitemap.xml",            lab: "ByteDance Seed",      extra: { content_type: lab_announcement, path_pattern: '^https://seed\.bytedance\.com/(blog|research)/', max_results: 25, max_age_days: 365 }, trust_score: 0.82 }
 
   # ====================== Star-level academic labs ======================
   - { name: "Berkeley BAIR",            kind: rss, url: "https://bair.berkeley.edu/blog/feed.xml",            lab: "Berkeley BAIR",       extra: { content_type: lab_announcement }, trust_score: 0.95 }
@@ -59,6 +64,15 @@ sources:
   - { name: "GitHub Blog",              kind: rss, url: "https://github.blog/feed/",                          lab: "GitHub",              extra: { content_type: blog }, trust_score: 0.75 }
   - { name: "Vercel Blog",              kind: rss, url: "https://vercel.com/atom",                            lab: "Vercel",              extra: { content_type: blog }, trust_score: 0.7  }
   - { name: "PlanetScale Blog",         kind: rss, url: "https://planetscale.com/blog/rss.xml",               lab: "PlanetScale",         extra: { content_type: blog }, trust_score: 0.7  }
+  - { name: "Kubernetes Blog",          kind: rss, url: "https://kubernetes.io/feed.xml",                     lab: "Kubernetes",          extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.78 }
+  - { name: "CNCF Blog",                kind: rss, url: "https://www.cncf.io/feed/",                          lab: "CNCF",                extra: { content_type: blog, max_results: 20, max_age_days: 180 }, trust_score: 0.75 }
+  - { name: "Docker Blog",              kind: rss, url: "https://www.docker.com/blog/feed/",                  lab: "Docker",              extra: { content_type: blog, max_results: 20, max_age_days: 180 }, trust_score: 0.72 }
+  - { name: "HashiCorp Blog",           kind: rss, url: "https://www.hashicorp.com/blog/feed.xml",            lab: "HashiCorp",           extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.75 }
+  - { name: "Grafana Blog",             kind: rss, url: "https://grafana.com/blog/index.xml",                 lab: "Grafana",             extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.74 }
+  - { name: "Elastic Blog",             kind: rss, url: "https://www.elastic.co/blog/feed",                   lab: "Elastic",             extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.72 }
+  - { name: "Neon Blog",                kind: rss, url: "https://neon.com/blog/rss.xml",                      lab: "Neon",                extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.7 }
+  - { name: "Prisma Blog",              kind: rss, url: "https://www.prisma.io/blog/rss.xml",                 lab: "Prisma",              extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.7 }
+  - { name: "Supabase Blog",            kind: html, url: "https://supabase.com/blog",                         lab: "Supabase",            extra: { adapter: html_index, content_type: blog, link_pattern: '^https://supabase\.com/blog/[^/?#]+$', exclude_link_pattern: '^https://supabase\.com/blog/(tags?|categories?)(/|$)', max_results: 20, candidate_limit: 50, max_age_days: 180 }, trust_score: 0.7 }
 
   # ====================== Aggregators / news ======================
   - { name: "Hacker News (front page)", kind: rss, url: "https://hnrss.org/frontpage",                        extra: { content_type: news }, trust_score: 0.6  }
@@ -73,6 +87,7 @@ sources:
   - { name: "CVE.org commits feed",     kind: rss, url: "https://github.com/CVEProject/cvelistV5/commits/main.atom",              extra: { content_type: news }, trust_score: 0.95 }
   - { name: "CISA Known Exploited Vulns", kind: rss, url: "https://www.cisa.gov/cybersecurity-advisories/all.xml",                extra: { content_type: news }, trust_score: 0.95 }
   - { name: "US-CERT Alerts",           kind: rss, url: "https://www.cisa.gov/uscert/ncas/alerts.xml",                            extra: { content_type: news }, trust_score: 0.9  }
+  - { name: "CERT/CC Vulnerability Notes", kind: rss, url: "https://kb.cert.org/vuls/atomfeed",                                    extra: { content_type: news, max_results: 20, max_age_days: 365 }, trust_score: 0.9 }
   # GitHub Security Advisories disabled: github.com/advisories.atom → 406 (atom feed retired, only JSON API now).
   - { name: "Full Disclosure Mailing List", kind: rss, url: "https://seclists.org/rss/fulldisclosure.rss",                        extra: { content_type: news }, trust_score: 0.7  }
   # oss-security ML disabled: openwall.com no longer ships per-list RSS, only the HTML archive.
@@ -103,6 +118,12 @@ sources:
   - { name: "PortSwigger Research",     kind: rss, url: "https://portswigger.net/research/rss",                        lab: "PortSwigger",  extra: { content_type: blog }, trust_score: 0.9  }
   - { name: "Project Discovery Blog",   kind: rss, url: "https://blog.projectdiscovery.io/rss/",                       lab: "ProjectDiscovery", extra: { content_type: blog }, trust_score: 0.8 }
   - { name: "Rapid7 Blog",              kind: rss, url: "https://www.rapid7.com/blog/rss/",                            lab: "Rapid7",       extra: { content_type: blog }, trust_score: 0.75 }
+  - { name: "ZDI Blog",                 kind: rss, url: "https://www.zerodayinitiative.com/blog?format=RSS",           lab: "Zero Day Initiative", extra: { content_type: blog, max_results: 25, max_age_days: 365 }, trust_score: 0.86 }
+  - { name: "Snyk Blog",                kind: rss, url: "https://snyk.io/blog/feed.xml",                              lab: "Snyk",         extra: { content_type: blog, max_results: 20, max_age_days: 180 }, trust_score: 0.75 }
+  - { name: "Chainguard Blog",          kind: rss, url: "https://www.chainguard.dev/unchained/rss.xml",               lab: "Chainguard",   extra: { content_type: blog, max_results: 25, max_age_days: 180 }, trust_score: 0.78 }
+  - { name: "ReversingLabs Blog",       kind: rss, url: "https://www.reversinglabs.com/blog/rss.xml",                 lab: "ReversingLabs",extra: { content_type: blog, max_results: 25, max_age_days: 365 }, trust_score: 0.78 }
+  - { name: "Sonatype Blog",            kind: rss, url: "https://www.sonatype.com/blog/rss.xml",                      lab: "Sonatype",     extra: { content_type: blog, max_results: 20, max_age_days: 180 }, trust_score: 0.75 }
+  - { name: "Wiz Research Blog",        kind: html, url: "https://www.wiz.io/blog",                                   lab: "Wiz",          extra: { adapter: html_index, content_type: blog, link_pattern: '^https://www\.wiz\.io/blog/(?!tag/)[^/?#]+$', max_results: 20, candidate_limit: 60, max_age_days: 180, include_keywords: [ "AI", "agent", "cloud", "Kubernetes", "CVE", "vulnerability", "malware", "supply chain", "security" ] }, trust_score: 0.78 }
 
   # ====================== Security: news / journalism ======================
   - { name: "Krebs on Security",        kind: rss, url: "https://krebsonsecurity.com/feed/",                                       extra: { content_type: news }, trust_score: 0.9  }
@@ -111,6 +132,14 @@ sources:
   - { name: "Schneier on Security",     kind: rss, url: "https://www.schneier.com/feed/atom/",                                     extra: { content_type: blog }, trust_score: 0.9  }
   - { name: "Dark Reading",             kind: rss, url: "https://www.darkreading.com/rss.xml",                                     extra: { content_type: news }, trust_score: 0.7  }
   - { name: "SecurityWeek",             kind: rss, url: "https://www.securityweek.com/feed/",                                      extra: { content_type: news }, trust_score: 0.7  }
+  - { name: "Malwarebytes Labs",        kind: rss, url: "https://www.malwarebytes.com/blog/feed/index.xml",                        extra: { content_type: news, max_results: 20, max_age_days: 180 }, trust_score: 0.72 }
+  - { name: "Sophos X-Ops",             kind: rss, url: "https://news.sophos.com/en-us/category/threat-research/feed/",             lab: "Sophos X-Ops", extra: { content_type: blog, max_results: 20, max_age_days: 365 }, trust_score: 0.8 }
+
+  # ====================== Independent research / explainers ======================
+  - { name: "Lilian Weng",              kind: rss, url: "https://lilianweng.github.io/index.xml",                                  lab: "Lilian Weng", extra: { content_type: blog, max_results: 15, max_age_days: 1200 }, trust_score: 0.9 }
+  - { name: "The Gradient",             kind: rss, url: "https://thegradient.pub/rss/",                                             extra: { content_type: blog, max_results: 20, max_age_days: 365 }, trust_score: 0.82 }
+  - { name: "Distill",                  kind: rss, url: "https://distill.pub/rss.xml",                                             extra: { content_type: tutorial, max_results: 20, max_age_days: 3650 }, trust_score: 0.88 }
+  - { name: "ACM Queue",                kind: rss, url: "https://queue.acm.org/rss/feeds/queuecontent.xml",                        extra: { content_type: blog, max_results: 20, max_age_days: 365 }, trust_score: 0.82 }
 
   # ====================== Security: arXiv ======================
   # cs.CR is already above; add the related crypto/network categories.

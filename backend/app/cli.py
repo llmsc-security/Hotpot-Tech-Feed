@@ -3,6 +3,7 @@
   hotpot seed-sources [--file PATH]      Load sources from YAML.
   hotpot ingest-now                      Pull every active source once, sync.
   hotpot ingest-source NAME              Pull a single source by name.
+  hotpot ingest-kind KIND                Pull every active source of one kind.
   hotpot ingest-deep [--passes N]        Run N full ingest passes with sleeps.
   hotpot enrich-all [--limit N]          Backfill summaries and quality scores.
   hotpot enrich-all --quality-only       Backfill ranking quality scores only.
@@ -21,7 +22,7 @@ from sqlalchemy import or_, select
 
 from app.core.db import session_scope
 from app.core.logging import configure_logging, get_logger
-from app.models.source import Source
+from app.models.source import Source, SourceKind, SourceStatus
 from app.tasks.ingest import ingest_all_sync, ingest_source
 
 configure_logging()
@@ -64,6 +65,28 @@ def ingest_one(name: str, workers: int | None) -> None:
             raise click.ClickException(f"no source named {name!r}")
         counts = ingest_source(db, source, workers=workers)
         click.echo(json.dumps(counts, indent=2))
+
+
+@cli.command("ingest-kind")
+@click.argument("kind", type=click.Choice([k.value for k in SourceKind]))
+@click.option("--workers", type=int, default=None,
+              help="Per-item enrichment threads (defaults to INGEST_WORKERS = cpu/2).")
+def ingest_kind_cmd(kind: str, workers: int | None) -> None:
+    """Run ingest on every active source of one adapter kind."""
+    aggregate = {"sources": 0, "fetched": 0, "new": 0, "dup": 0, "errors": 0}
+    with session_scope() as db:
+        sources = db.execute(
+            select(Source)
+            .where(Source.kind == SourceKind(kind))
+            .where(Source.status != SourceStatus.paused)
+            .order_by(Source.name)
+        ).scalars().all()
+        for source in sources:
+            counts = ingest_source(db, source, workers=workers)
+            aggregate["sources"] += 1
+            for key in ("fetched", "new", "dup", "errors"):
+                aggregate[key] += int(counts.get(key, 0))
+    click.echo(json.dumps(aggregate, indent=2))
 
 
 @cli.command("list-sources")

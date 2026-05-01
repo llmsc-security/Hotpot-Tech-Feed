@@ -43,7 +43,7 @@ backend/                          FastAPI + CLI (one image, two entrypoints)
   app/main.py                     FastAPI app
   app/cli.py                      `hotpot` CLI (ingest-now, enrich-all, …)
   app/api/routes/                 items, sources, contribute, health
-  app/adapters/                   arxiv, rss, html (sitemap-driven) — registered in __init__.py
+  app/adapters/                   arxiv, rss, html sitemap, html_index polling — registered in __init__.py
   app/services/llm.py             ALL LLM calls go through _chat() here
   app/services/contribute.py      User URL → fetch → classify → ingest
   app/services/dedup.py           3-stage: canonical → fuzzy title → embeddings
@@ -91,12 +91,14 @@ docs/                             slides.pptx generator
    backend`. If you change a `Source.url` in the DB without updating the
    YAML, the next container restart re-creates the old row as a duplicate.
 
-7. **Adapter dispatch is by `kind`** (`arxiv | rss | html | github`). `html`
-   is a sitemap-driven adapter (`app/adapters/html.py`) for sites without
-   RSS — the URL is treated as `sitemap.xml`/`sitemapindex`, optional
-   `extra.path_pattern` regex scopes the URLs, titles come from
-   `<meta og:title>` then `<title>`. `github` has no adapter yet; do not
-   seed `kind: github` until one is added.
+7. **Adapter dispatch is by `kind` plus optional `extra.adapter`.** Kinds are
+   `arxiv | rss | html | github`. Default `html` is sitemap-driven
+   (`app/adapters/html.py`): URL is `sitemap.xml`/`sitemapindex`, optional
+   `extra.path_pattern` scopes URLs. `extra.adapter: html_index` uses
+   `app/adapters/html_index.py`: cron polls ordinary listing pages, extracts
+   links with `link_pattern`, fetches each article, and dedup makes repeated
+   polling behave like RSS. `github` has no adapter yet; do not seed
+   `kind: github` until one is added.
 
 8. **Validate any new RSS feed before adding to seed_sources.yaml.** A 200
    response is not enough — feedparser may return zero entries (comments
@@ -104,6 +106,11 @@ docs/                             slides.pptx generator
    `httpx.get(url)` then `feedparser.parse(r.text)` and only commit if
    `len(parsed.entries) > 0`. Many Chinese/media/lab sites need RSSHub or
    cookies and belong in `seed_candidates.yaml`, not `seed_sources.yaml`.
+
+9. **For sites without RSS, prefer cron-polled `html_index` over ad hoc
+   scraping.** Add a constrained `link_pattern`, cap `max_results` and
+   `candidate_limit`, then schedule `scripts/cron_hotpot.sh ingest-html`.
+   The DB's canonical URL uniqueness is the seen-set.
 
 ## Build / verify after a change
 

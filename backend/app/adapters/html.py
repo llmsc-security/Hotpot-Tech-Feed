@@ -19,6 +19,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable
 from datetime import datetime, timedelta, timezone
+from html import unescape
 from xml.etree import ElementTree as ET
 
 from app.adapters.base import BaseAdapter
@@ -61,6 +62,8 @@ class HtmlSitemapAdapter(BaseAdapter):
             for url, lastmod in entries:
                 page = _fetch_page(client, url)
                 title = _page_title(page) if page else None
+                if _is_generic_title(title, source_name=self.source.name, lab=lab):
+                    title = None
                 title = title or _slug_title(url)
                 if not title:
                     continue
@@ -145,10 +148,10 @@ def _page_title(html: str | None) -> str | None:
         return None
     m = _OG_TITLE_RE.search(html)
     if m:
-        return _clean(m.group(1))
+        return _strip_title_suffix(_clean(m.group(1)))
     m = _TITLE_RE.search(html)
     if m:
-        return _clean(m.group(1))
+        return _strip_title_suffix(_clean(m.group(1)))
     return None
 
 
@@ -159,4 +162,26 @@ def _slug_title(url: str) -> str:
 
 
 def _clean(s: str) -> str:
-    return re.sub(r"\s+", " ", s).strip()[:300]
+    return re.sub(r"\s+", " ", unescape(s)).strip()[:300]
+
+
+def _strip_title_suffix(title: str) -> str:
+    for sep in (" | ", " - "):
+        head, found, tail = title.rpartition(sep)
+        if found and head and 2 <= len(tail) <= 32:
+            return head.strip()
+    return title
+
+
+def _is_generic_title(title: str | None, *, source_name: str, lab: str | None) -> bool:
+    if not title:
+        return False
+    normalized = _normalize_title(title)
+    generic = {_normalize_title(source_name)}
+    if lab:
+        generic.add(_normalize_title(lab))
+    return normalized in generic
+
+
+def _normalize_title(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "", value.lower())

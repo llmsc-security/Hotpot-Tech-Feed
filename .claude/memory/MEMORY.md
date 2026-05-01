@@ -4,6 +4,7 @@
 - [Qwen3.5 thinking-mode trap](project_qwen_thinking.md) — every chat call must pass enable_thinking=false or JSON tagging silently degrades.
 - [AI-lab posts are lab_announcement, not blog](project_ai_lab_taxonomy.md) — NL search aliases OpenAI/DeepMind/Anthropic/etc. blog→lab_announcement.
 - [HtmlSitemapAdapter for sites without RSS](project_html_sitemap_adapter.md) — SourceKind.html walks sitemap.xml; ElementTree `or`-chain pitfall.
+- [Cron-polled HTML sources](project_cron_polled_html_sources.md) — `extra.adapter: html_index` plus host cron makes ordinary listing pages behave like RSS.
 - [seed_sources.yaml is baked into backend image](project_seed_yaml_baked_in.md) — rebuild backend after edits; seeder matches by URL not name.
 - [Content quality backfill resume rule](project_content_quality_backfill.md) — check DB/doc status first; use `--quality-only --claim`; total quality workers <= 8.
 - [Backup / restore tooling](reference_backup_restore.md) — bash backup.sh / restore.sh at repo root produce a portable ~2MB archive.
