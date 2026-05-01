@@ -271,6 +271,58 @@ export async function listCommunity(
   return resp.json();
 }
 
+export interface SourceCandidate {
+  id: string;
+  domain: string;
+  sample_url: string;
+  name_hint: string | null;
+  language: string | null;
+  mention_count: number;
+  contributor_count: number;
+  signal_score: number;
+  llm_verdict: string | null;
+  llm_rationale: string | null;
+  is_llm_focused: boolean;
+  academic_depth: string | null;
+  suggested_kind: string | null;
+  status: string;
+  source_signal: string | null;
+}
+
+export interface CandidateListResp {
+  candidates: SourceCandidate[];
+  total: number;
+}
+
+export async function listCandidates(
+  status: "pending" | "promoted" | "rejected" = "pending",
+  limit = 50,
+): Promise<CandidateListResp> {
+  const resp = await fetch(`${BASE}/discovery/candidates?status=${status}&limit=${limit}`);
+  if (!resp.ok) throw new Error(`candidates fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function promoteCandidate(
+  id: string,
+  kind?: "rss" | "html" | "arxiv" | "github",
+): Promise<{ ok: boolean; source_id: string; name: string; url: string }> {
+  const resp = await fetch(`${BASE}/discovery/candidates/${id}/promote`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(kind ? { kind } : {}),
+  });
+  if (!resp.ok) throw new Error(`promote failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function rejectCandidate(id: string): Promise<void> {
+  const resp = await fetch(`${BASE}/discovery/candidates/${id}/reject`, {
+    method: "POST",
+  });
+  if (!resp.ok) throw new Error(`reject failed: ${resp.status}`);
+}
+
 export async function bumpItemClick(itemId: string): Promise<void> {
   // Fire-and-forget — never let a tracking failure block the user's navigation.
   try {

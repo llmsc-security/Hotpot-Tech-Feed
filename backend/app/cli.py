@@ -168,5 +168,57 @@ def preview_digest(out: str, hours: int, limit: int) -> None:
     click.echo(json.dumps({"wrote": out, "items": len(items), "subject": rendered.subject}, indent=2))
 
 
+@cli.command("discover-sources")
+@click.option("--bootstrap/--no-bootstrap", default=False,
+              help="Also load data/seed_candidates.yaml on this run.")
+@click.option("--verdict-limit", default=10, show_default=True,
+              help="Max LLM verdicts to run for un-verdicted candidates.")
+def discover_sources_cmd(bootstrap: bool, verdict_limit: int) -> None:
+    """Mine new source candidates from corpus + user contribs + GitHub + HN."""
+    from app.services.discovery import discover_sources, verdict_pending_candidates
+    with session_scope() as db:
+        counts = discover_sources(db, bootstrap=bootstrap)
+        n_verdict = verdict_pending_candidates(db, limit=verdict_limit)
+        counts["llm_verdicts"] = n_verdict
+        click.echo(json.dumps(counts, indent=2))
+
+
+@cli.command("score-sources")
+def score_sources_cmd() -> None:
+    """Recompute trust_score for every source from real click data + LLM signal."""
+    from app.services.discovery import score_sources
+    with session_scope() as db:
+        click.echo(json.dumps(score_sources(db), indent=2))
+
+
+@cli.command("health-check-sources")
+def health_check_cmd() -> None:
+    """HEAD every active source URL and update health_status."""
+    from app.services.discovery import health_check_sources
+    with session_scope() as db:
+        click.echo(json.dumps(health_check_sources(db), indent=2))
+
+
+@cli.command("list-candidates")
+@click.option("--status", default="pending", show_default=True)
+@click.option("--limit", default=20, show_default=True)
+def list_candidates(status: str, limit: int) -> None:
+    """Print discovery candidates for review."""
+    from app.models.discovery import SourceCandidate
+    with session_scope() as db:
+        rows = db.execute(
+            select(SourceCandidate)
+            .where(SourceCandidate.status == status)
+            .order_by(SourceCandidate.signal_score.desc())
+            .limit(limit)
+        ).scalars().all()
+        for c in rows:
+            mark = "🎓" if c.is_llm_focused else "  "
+            click.echo(
+                f"{mark} {c.signal_score:.2f}  [{c.llm_verdict or '?'}]  "
+                f"{c.name_hint or c.domain:<40}  {c.sample_url}"
+            )
+
+
 if __name__ == "__main__":
     cli()

@@ -105,5 +105,21 @@ class Settings(BaseSettings):
     # ---------- Site ----------
     public_origin: str = "http://localhost:5173"
 
+    # ---------- Source discovery ----------
+    # Optional GitHub token (read-only public scope) — without it, GitHub API
+    # mining is rate-limited to 60 req/h. Recommended for any real cadence.
+    github_token: str = ""
+    # Bias the LLM verdict on candidate sources: "llm" (foundation models),
+    # "academic" (paper-level depth), "ml-systems", etc.
+    discovery_focus: str = "llm,academic"
+    discovery_languages: str = "en,zh"
+    discovery_seed_path: str = "data/seed_candidates.yaml"
+    # Self-hosted RSSHub for WeChat / Bilibili / Zhihu bridge feeds.
+    # Empty string = disabled (default until you bring up the rsshub service).
+    rsshub_url: str = ""
+    # Quality-scoring thresholds for auto-probation / auto-pause.
+    score_probation_threshold: float = 0.2
+    score_pause_after_n_low_runs: int = 2
+
 
 settings = Settings()

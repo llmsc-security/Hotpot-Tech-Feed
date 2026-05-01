@@ -1,12 +1,16 @@
 import { useEffect } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  listCandidates,
   listCategories,
   listContentTypes,
   listSources,
+  promoteCandidate,
+  rejectCandidate,
   type CategoryBucket,
   type ContentTypeBucket,
+  type SourceCandidate,
   type SourceSummary,
 } from "../api";
 
@@ -74,6 +78,7 @@ export default function SourcesDrawer({ onClose }: { onClose: () => void }) {
         </header>
 
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
+          <DiscoverySection />
           <CollectionCard
             title="Categories"
             subtitle="user-confirmed primary category"
@@ -161,6 +166,106 @@ function CollectionCard({
           ))}
         </ul>
       )}
+    </div>
+  );
+}
+
+function DiscoverySection() {
+  const qc = useQueryClient();
+  const { data } = useQuery({
+    queryKey: ["candidates", "pending"],
+    queryFn: () => listCandidates("pending", 30),
+    staleTime: 60_000,
+  });
+
+  const promote = useMutation({
+    mutationFn: (id: string) => promoteCandidate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["candidates"] });
+      qc.invalidateQueries({ queryKey: ["sources-drawer"] });
+    },
+  });
+  const reject = useMutation({
+    mutationFn: (id: string) => rejectCandidate(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["candidates"] }),
+  });
+
+  const cands = data?.candidates ?? [];
+  if (cands.length === 0) return null;
+
+  return (
+    <div className="rounded-xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 px-3 py-2.5">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">
+            🔍 Discovery ({data?.total ?? cands.length})
+          </h3>
+          <p className="text-[10px] text-slate-500">
+            new sources spotted by the auto-job — click ✓ to add, ✗ to reject
+          </p>
+        </div>
+      </div>
+      <ul className="space-y-1.5">
+        {cands.slice(0, 8).map((c: SourceCandidate) => (
+          <li key={c.id} className="text-xs">
+            <div className="flex items-center gap-1.5">
+              {c.is_llm_focused && (
+                <span
+                  className="text-[9px] uppercase font-bold text-amber-800
+                             bg-amber-100 px-1 py-0.5 rounded"
+                  title="LLM-focused"
+                >
+                  LLM
+                </span>
+              )}
+              {c.academic_depth === "high" && (
+                <span
+                  className="text-[9px] uppercase font-bold text-emerald-800
+                             bg-emerald-100 px-1 py-0.5 rounded"
+                  title="High academic depth"
+                >
+                  🎓
+                </span>
+              )}
+              <a
+                href={c.sample_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="font-medium text-slate-900 truncate flex-1 hover:underline"
+                title={c.sample_url}
+              >
+                {c.name_hint || c.domain}
+              </a>
+              <span className="text-[10px] text-slate-400 tabular-nums">
+                {Math.round(c.signal_score * 100)}
+              </span>
+              <button
+                type="button"
+                disabled={promote.isPending}
+                onClick={() => promote.mutate(c.id)}
+                className="text-emerald-700 hover:text-emerald-900 px-1"
+                title="Add as a tracked source"
+              >
+                ✓
+              </button>
+              <button
+                type="button"
+                disabled={reject.isPending}
+                onClick={() => reject.mutate(c.id)}
+                className="text-slate-400 hover:text-red-600 px-1"
+                title="Reject"
+              >
+                ✗
+              </button>
+            </div>
+            {c.llm_rationale && (
+              <p className="text-[10px] text-slate-500 ml-1 line-clamp-1 italic">
+                {c.llm_rationale}
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

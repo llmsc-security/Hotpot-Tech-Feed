@@ -1,0 +1,177 @@
+# Bootstrap list of candidate sources for the discovery queue.
+#
+# Loaded by `hotpot discover-sources --bootstrap` and during `score-sources`'s
+# first run. Each entry is upserted into source_candidates with status=pending
+# and an LLM-vetted "signal" verdict so it shows up at the top of the
+# Discovery drawer for the human curator to click ✓ once.
+#
+# Categories:
+#   - zh AI media (LLM-focused, news/analysis)
+#   - zh AI lab/team blogs
+#   - zh Bilibili creators (academic LLM lectures)  — bridged via RSSHub
+#   - en academic / venue
+#
+# Notes on auth requirements:
+#   - WeChat OA listings need RSSHub + (ideally) WeChat reader cookies.
+#     Skipped here; we ingest WeChat articles only via user contributions.
+#   - Zhihu needs the user's z_c0 cookie via RSSHub. Skipped here.
+#   - Bilibili routes via RSSHub use the latter's WBI signing impl.
+
+candidates:
+  # === Tier-A: Chinese AI media (clean RSS / public HTML) ===
+  - name: 量子位 (qbitai)
+    url: https://www.qbitai.com/feed
+    kind: rss
+    language: zh
+    is_llm_focused: true
+    academic_depth: medium
+    rationale: Top-tier Chinese AI media; native RSS feed.
+    lineage: media
+    signal_score: 0.92
+
+  - name: 机器之心 (jiqizhixin)
+    url: https://www.jiqizhixin.com
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: medium
+    rationale: Top-tier Chinese AI news + paper write-ups; HTML scrape.
+    lineage: media
+    signal_score: 0.90
+
+  - name: 新智元 (AI Era)
+    url: https://www.aiera.com.cn
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: low
+    rationale: Major Chinese AI media; mostly news.
+    lineage: media
+    signal_score: 0.78
+
+  # === Tier-A: Chinese AI labs ===
+  - name: BAAI 智源 hub
+    url: https://hub.baai.ac.cn
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: high
+    rationale: Beijing Academy of AI — original LLM research hub.
+    lineage: lab
+    signal_score: 0.95
+
+  - name: DeepSeek news
+    url: https://api-docs.deepseek.com/news
+    kind: html
+    language: en
+    is_llm_focused: true
+    academic_depth: high
+    rationale: DeepSeek release notes and tech announcements.
+    lineage: lab
+    signal_score: 0.95
+
+  - name: Qwen team blog
+    url: https://qwenlm.github.io
+    kind: rss
+    language: en
+    is_llm_focused: true
+    academic_depth: high
+    rationale: Qwen team's own blog (model maker behind our self-hosted LLM).
+    lineage: lab
+    signal_score: 0.95
+
+  - name: ByteDance Seed
+    url: https://seed.bytedance.com
+    kind: html
+    language: en
+    is_llm_focused: true
+    academic_depth: high
+    rationale: ByteDance LLM/agent research lab.
+    lineage: lab
+    signal_score: 0.88
+
+  - name: 智谱 (Zhipu / GLM) docs
+    url: https://open.bigmodel.cn/dev/api
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: low
+    rationale: Zhipu / GLM team — mostly API docs but ships release notes.
+    lineage: lab
+    signal_score: 0.65
+
+  - name: Moonshot 月之暗面
+    url: https://www.moonshot.cn
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: low
+    rationale: Kimi team product page; light blog content.
+    lineage: lab
+    signal_score: 0.55
+
+  - name: Shanghai AI Lab (OpenGVLab)
+    url: https://www.shlab.org.cn
+    kind: html
+    language: zh
+    is_llm_focused: true
+    academic_depth: high
+    rationale: Multi-modal LLM research; Pulse+InternVL series.
+    lineage: lab
+    signal_score: 0.85
+
+  # === Tier-A: en academic venues ===
+  - name: VALSE
+    url: https://valser.org
+    kind: html
+    language: zh
+    is_llm_focused: false
+    academic_depth: high
+    rationale: Vision And Learning SEminar — Chinese academic venue.
+    lineage: lab
+    signal_score: 0.6
+
+  - name: NLPCC 2025
+    url: http://tcci.ccf.org.cn/conference/2025
+    kind: html
+    language: zh
+    is_llm_focused: false
+    academic_depth: high
+    rationale: Chinese NLP conference; venue news.
+    lineage: lab
+    signal_score: 0.55
+
+  # === Bilibili creators (academic LLM lectures) ===
+  # NOTE: these REQUIRE rsshub running. Without it, kind=rss URLs below 404.
+  - name: 跟李沐学AI (Bilibili)
+    url: ${RSSHUB_URL}/bilibili/user/video/1567748478
+    kind: rss
+    language: zh
+    is_llm_focused: true
+    academic_depth: high
+    rationale: Mu Li's paper-walkthrough lectures — the gold standard for Chinese ML video pedagogy.
+    lineage: individual
+    signal_score: 0.95
+    requires: rsshub
+
+  - name: 王树森 (Bilibili)
+    url: ${RSSHUB_URL}/bilibili/user/video/1369507485
+    kind: rss
+    language: zh
+    is_llm_focused: false
+    academic_depth: high
+    rationale: Shusen Wang's RL/DL lectures.
+    lineage: individual
+    signal_score: 0.85
+    requires: rsshub
+
+  - name: 同济子豪兄 (Bilibili)
+    url: ${RSSHUB_URL}/bilibili/user/video/1900783
+    kind: rss
+    language: zh
+    is_llm_focused: false
+    academic_depth: medium
+    rationale: Tongji University ML / CV tutorials.
+    lineage: individual
+    signal_score: 0.7
+    requires: rsshub

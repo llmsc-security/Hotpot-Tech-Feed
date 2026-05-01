@@ -75,6 +75,12 @@ services:
       ENRICH_SUMMARY: ${ENRICH_SUMMARY:-true}
       ENRICH_COMMENTARY: ${ENRICH_COMMENTARY:-false}
       PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      # Source discovery
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      RSSHUB_URL: ${RSSHUB_URL:-}
+      DISCOVERY_FOCUS: ${DISCOVERY_FOCUS:-llm,academic}
+      DISCOVERY_LANGUAGES: ${DISCOVERY_LANGUAGES:-en,zh}
+      DISCOVERY_SEED_PATH: ${DISCOVERY_SEED_PATH:-data/seed_candidates.yaml}
     depends_on:
       postgres:
         condition: service_healthy
@@ -146,6 +152,28 @@ services:
     restart: unless-stopped
     networks:
       - internal
+
+  # ----- RSSHub: WeChat / Bilibili / Zhihu → RSS bridge -----
+  # Disabled by default. To enable:
+  #   docker compose --profile discovery up -d
+  # Then set RSSHUB_URL=http://rsshub:1200 in .env.
+  rsshub:
+    image: diygod/rsshub:latest
+    container_name: hotpot-rsshub
+    environment:
+      NODE_ENV: production
+      CACHE_TYPE: redis
+      REDIS_URL: redis://redis:6379/2
+      # Per-route auth (optional — leave blank if you don't have these):
+      ZHIHU_COOKIES: ${ZHIHU_Z_C0:-}
+      WEIXIN_BIZ_COOKIES: ${WECHAT_COOKIES:-}
+    depends_on:
+      - redis
+    restart: unless-stopped
+    networks:
+      - internal
+    profiles:
+      - discovery
 
 volumes:
   hotpot_pg:

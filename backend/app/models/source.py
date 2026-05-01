@@ -58,6 +58,9 @@ class Source(Base):
         DateTime(timezone=True), server_default=func.now(), nullable=False
     )
 
+    # {"llm": bool, "academic": "high"|"medium"|"low", "lineage": "lab"|"media"|"individual"|"company"}
+    editorial_focus: Mapped[Optional[dict]] = mapped_column(JSONB, nullable=True)
+
     items = relationship("Item", back_populates="source", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:  # pragma: no cover
