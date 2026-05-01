@@ -4,7 +4,8 @@
   hotpot ingest-now                      Pull every active source once, sync.
   hotpot ingest-source NAME              Pull a single source by name.
   hotpot ingest-deep [--passes N]        Run N full ingest passes with sleeps.
-  hotpot enrich-all [--limit N]          Backfill summaries on items missing them.
+  hotpot enrich-all [--limit N]          Backfill summaries and quality scores.
+  hotpot enrich-all --quality-only       Backfill ranking quality scores only.
   hotpot list-sources                    Print every source row.
   hotpot send-test-digest --to EMAIL     Render today's digest and send it.
   hotpot preview-digest [--out PATH]     Write the rendered digest HTML to a file.
@@ -12,9 +13,11 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 
 import click
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 from app.core.db import session_scope
 from app.core.logging import configure_logging, get_logger
@@ -105,29 +108,162 @@ def ingest_deep(passes: int, sleep: int, workers: int | None, source_workers: in
 @cli.command("enrich-all")
 @click.option("--limit", default=1000, show_default=True, help="Max items to process this run.")
 @click.option("--missing-only/--all", default=True, show_default=True,
-              help="Only enrich items without a summary (default), or re-enrich everything.")
-def enrich_all(limit: int, missing_only: bool) -> None:
-    """Backfill summaries / tags on items already in the DB.
+              help="Only enrich items without a summary or quality score, or re-enrich everything.")
+@click.option("--workers", default=1, show_default=True, type=click.IntRange(1, 8),
+              help="Parallel item workers, max 8. Each worker may call the LLM.")
+@click.option("--claim/--fixed-batch", default=False, show_default=True,
+              help="Use row locks with SKIP LOCKED; safe for multiple concurrent CLI jobs.")
+@click.option("--quality-only", is_flag=True,
+              help="Only process items with score <= 0. Best for quality-rank backfills.")
+def enrich_all(limit: int, missing_only: bool, workers: int, claim: bool, quality_only: bool) -> None:
+    """Backfill summaries, tags, and quality scores on items already in the DB.
 
     Useful after a snapshot restore (Postgres dump preserves enrichment, so
     this is mostly a no-op then) or after the LLM endpoint becomes reachable.
     """
-    from app.tasks.enrich import enrich_item
     from app.models.item import Item
+
+    if claim:
+        _enrich_claimed_items(
+            limit=limit,
+            missing_only=missing_only,
+            workers=workers,
+            quality_only=quality_only,
+        )
+        return
+
     with session_scope() as db:
-        stmt = select(Item).order_by(Item.fetched_at.desc()).limit(limit)
-        if missing_only:
-            stmt = stmt.where(Item.summary.is_(None))
-        items = db.execute(stmt).scalars().all()
-        click.echo(f"enriching {len(items)} items…")
-        ok = 0
-        for it in items:
-            try:
-                enrich_item(db, it)
+        stmt = _enrich_item_query(Item).limit(limit)
+        if quality_only:
+            stmt = stmt.where(Item.score <= 0)
+        elif missing_only:
+            stmt = stmt.where(or_(Item.summary.is_(None), Item.score <= 0))
+        item_ids = db.execute(stmt).scalars().all()
+    click.echo(f"enriching {len(item_ids)} items with {workers} worker(s)…")
+    ok = 0
+    errors = 0
+    if workers == 1:
+        for item_id in item_ids:
+            item_ok, err = _enrich_one_item(item_id)
+            if item_ok:
                 ok += 1
-            except Exception as e:
-                click.echo(f"  err: {it.id}  {e}")
-        click.echo(json.dumps({"processed": len(items), "ok": ok}, indent=2))
+            else:
+                errors += 1
+                click.echo(f"  err: {item_id}  {err}")
+    else:
+        completed = 0
+        with ThreadPoolExecutor(max_workers=workers) as pool:
+            futures = {pool.submit(_enrich_one_item, item_id): item_id for item_id in item_ids}
+            for fut in as_completed(futures):
+                item_id = futures[fut]
+                completed += 1
+                try:
+                    item_ok, err = fut.result()
+                except Exception as e:  # pragma: no cover
+                    item_ok, err = False, str(e)
+                if item_ok:
+                    ok += 1
+                else:
+                    errors += 1
+                    click.echo(f"  err: {item_id}  {err}")
+                if completed % 50 == 0 or completed == len(item_ids):
+                    click.echo(f"  progress: {completed}/{len(item_ids)}")
+
+    click.echo(json.dumps({"processed": len(item_ids), "ok": ok, "errors": errors}, indent=2))
+
+
+def _enrich_claimed_items(
+    *,
+    limit: int,
+    missing_only: bool,
+    workers: int,
+    quality_only: bool,
+) -> None:
+    click.echo(f"claim-enriching up to {limit} items with {workers} worker(s)…")
+    lock = Lock()
+    state = {"claimed": 0, "processed": 0, "ok": 0, "errors": 0, "empty": False}
+
+    def work_loop() -> None:
+        while True:
+            with lock:
+                if state["empty"] or state["claimed"] >= limit:
+                    return
+                state["claimed"] += 1
+
+            item_id, item_ok, err = _claim_and_enrich_one_item(
+                missing_only=missing_only,
+                quality_only=quality_only,
+            )
+            with lock:
+                if item_id is None:
+                    state["empty"] = True
+                    return
+                state["processed"] += 1
+                if item_ok:
+                    state["ok"] += 1
+                else:
+                    state["errors"] += 1
+                    click.echo(f"  err: {item_id}  {err}")
+                done = state["processed"]
+                if done % 50 == 0 or done == limit:
+                    click.echo(f"  progress: {done}/{limit}")
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        futures = [pool.submit(work_loop) for _ in range(workers)]
+        for fut in as_completed(futures):
+            fut.result()
+
+    click.echo(json.dumps({
+        "processed": state["processed"],
+        "ok": state["ok"],
+        "errors": state["errors"],
+    }, indent=2))
+
+
+def _enrich_item_query(Item):
+    return select(Item.id).order_by(Item.fetched_at.desc())
+
+
+def _claim_and_enrich_one_item(
+    *,
+    missing_only: bool,
+    quality_only: bool,
+) -> tuple[object | None, bool, str | None]:
+    from app.models.item import Item
+    from app.tasks.enrich import enrich_item
+
+    item_id = None
+    try:
+        with session_scope() as db:
+            stmt = select(Item).order_by(Item.fetched_at.desc()).limit(1)
+            if quality_only:
+                stmt = stmt.where(Item.score <= 0)
+            elif missing_only:
+                stmt = stmt.where(or_(Item.summary.is_(None), Item.score <= 0))
+            stmt = stmt.with_for_update(skip_locked=True)
+            item = db.execute(stmt).scalars().first()
+            if not item:
+                return None, False, None
+            item_id = item.id
+            enrich_item(db, item)
+            return item_id, True, None
+    except Exception as e:
+        return item_id, False, str(e)
+
+
+def _enrich_one_item(item_id) -> tuple[bool, str | None]:
+    from app.models.item import Item
+    from app.tasks.enrich import enrich_item
+
+    with session_scope() as db:
+        item = db.get(Item, item_id)
+        if not item:
+            return False, "item not found"
+        try:
+            enrich_item(db, item)
+            return True, None
+        except Exception as e:
+            return False, str(e)
 
 
 @cli.command("send-test-digest")

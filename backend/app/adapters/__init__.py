@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.adapters.base import BaseAdapter
 from app.adapters.arxiv import ArxivAdapter
+from app.adapters.doonsec import DoonsecAdapter
 from app.adapters.html import HtmlSitemapAdapter
 from app.adapters.rss import RssAdapter
 from app.models.source import Source, SourceKind
@@ -21,6 +22,8 @@ ADAPTERS: dict[SourceKind, type[BaseAdapter]] = {
 
 
 def get_adapter(source: Source) -> BaseAdapter:
+    if source.kind == SourceKind.rss and (source.extra or {}).get("adapter") == "doonsec":
+        return DoonsecAdapter(source)
     cls = ADAPTERS.get(source.kind)
     if cls is None:
         raise ValueError(f"No adapter registered for source kind {source.kind!r}")

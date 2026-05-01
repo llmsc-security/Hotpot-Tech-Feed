@@ -153,6 +153,122 @@ def summarize(title: str, excerpt: str | None) -> str | None:
         return None
 
 
+# ---------- Quality scoring ----------
+
+_QUALITY_SYSTEM = (
+    "You score whether a computer-science feed item is worth opening for a "
+    "technical reader. Return strict JSON only with keys: "
+    "technical_depth, specificity, novelty, usefulness, credibility, "
+    "attractiveness, hype_penalty, confidence. Each value is a float from 0 to 1. "
+    "Reward concrete methods, benchmarks, incidents, releases, tutorials, "
+    "measurements, and clear research contributions. Penalize vague marketing "
+    "copy, empty news, generic announcements, and titles with too little evidence."
+)
+
+
+def score_item_quality(
+    title: str,
+    excerpt: str | None,
+    *,
+    summary: str | None = None,
+    content_type: str | None = None,
+    source_name: str | None = None,
+    source_trust: float | None = None,
+) -> float:
+    """Return a stable [0, 1] quality prior for ranking."""
+    excerpt = (excerpt or "").strip()
+    summary = (summary or "").strip()
+    heuristic = _heuristic_quality_score(
+        title=title,
+        excerpt=excerpt,
+        summary=summary,
+        content_type=content_type,
+        source_trust=source_trust,
+    )
+    if not excerpt and not summary:
+        return heuristic
+
+    user = (
+        f"CONTENT_TYPE: {content_type or 'unknown'}\n"
+        f"SOURCE: {source_name or 'unknown'}\n"
+        f"SOURCE_TRUST: {source_trust if source_trust is not None else 'unknown'}\n\n"
+        f"TITLE: {title[:500]}\n\n"
+        f"SUMMARY: {summary[:500]}\n\n"
+        f"EXCERPT: {excerpt[:2200]}\n\n"
+        "Respond with JSON only."
+    )
+    try:
+        raw = _chat(settings.llm_model_summary, _QUALITY_SYSTEM, user, max_tokens=220)
+        data = _extract_json(raw)
+        technical_depth = _coerce_unit_float(data.get("technical_depth"))
+        specificity = _coerce_unit_float(data.get("specificity"))
+        novelty = _coerce_unit_float(data.get("novelty"))
+        usefulness = _coerce_unit_float(data.get("usefulness"))
+        credibility = _coerce_unit_float(data.get("credibility"))
+        attractiveness = _coerce_unit_float(data.get("attractiveness"))
+        hype_penalty = _coerce_unit_float(data.get("hype_penalty"))
+        if any(
+            v is None for v in (
+                technical_depth, specificity, novelty, usefulness,
+                credibility, attractiveness, hype_penalty,
+            )
+        ):
+            return heuristic
+        score = (
+            technical_depth * 0.22
+            + specificity * 0.18
+            + novelty * 0.16
+            + usefulness * 0.18
+            + credibility * 0.12
+            + attractiveness * 0.14
+            - hype_penalty * 0.18
+        )
+        return max(0.05, min(0.98, round(score, 4)))
+    except Exception as e:  # pragma: no cover
+        log.warning("score_item_quality failed", err=str(e))
+        return heuristic
+
+
+def _heuristic_quality_score(
+    *,
+    title: str,
+    excerpt: str,
+    summary: str,
+    content_type: str | None,
+    source_trust: float | None,
+) -> float:
+    text = f"{title}\n{summary}\n{excerpt}".lower()
+    score = 0.34
+    if len(excerpt) >= 180:
+        score += 0.07
+    if len(excerpt) >= 500:
+        score += 0.05
+    if summary:
+        score += 0.05
+    if content_type in {"paper", "tutorial", "lab_announcement"}:
+        score += 0.08
+    elif content_type == "news":
+        score += 0.04
+    if source_trust is not None:
+        score += max(-0.08, min(0.08, (source_trust - 0.5) * 0.25))
+
+    strong_terms = (
+        "benchmark", "evaluation", "dataset", "architecture", "method",
+        "attack", "vulnerability", "cve-", "release", "agent", "retrieval",
+        "compiler", "database", "kernel", "training", "inference",
+        "robot", "deployment", "postmortem", "measurement",
+    )
+    weak_terms = (
+        "roundup", "weekly", "opinion", "thoughts", "welcome", "hiring",
+        "webinar", "event recap",
+    )
+    if any(term in text for term in strong_terms):
+        score += 0.08
+    if any(term in text for term in weak_terms):
+        score -= 0.09
+    return max(0.08, min(0.92, round(score, 4)))
+
+
 # ---------- Commentary (off until tuned) ----------
 
 _COMMENTARY_PROMPTS: dict[str, str] = {
@@ -198,19 +314,146 @@ _NL_FILTER_SYSTEM = (
 )
 
 
+_TYPO_FIXES = {
+    "recenty": "recent",
+    "recnt": "recent",
+    "lastest": "latest",
+    "newst": "newest",
+}
+
+_TOPIC_ALIASES: dict[str, str] = {
+    "security": "Security", "cybersecurity": "Security", "cve": "Security",
+    "vulnerability": "Security", "vulnerabilities": "Security",
+    "threat": "Security", "exploit": "Security", "malware": "Security",
+    "ml": "ML", "machine learning": "ML", "deep learning": "ML", "ai": "ML",
+    "llm": "ML", "neural": "ML",
+    "systems": "Systems", "distributed": "Systems", "operating system": "Systems",
+    "database": "DB", "databases": "DB", "db": "DB", "sql": "DB",
+    "network": "Networks", "networks": "Networks", "networking": "Networks",
+    "robotics": "Robotics", "robot": "Robotics",
+    "hci": "HCI", "human-computer": "HCI",
+    "programming language": "PL", "programming languages": "PL", "compiler": "PL",
+    "theory": "Theory", "complexity": "Theory",
+    "graphics": "Graphics", "rendering": "Graphics",
+}
+
+_SOURCE_HINTS = (
+    "arxiv", "openai", "anthropic", "deepmind", "google", "meta",
+    "microsoft", "nvidia", "apple", "hugging face", "cloudflare",
+    "github", "vercel", "stripe", "wechat", "krebs", "talos", "mandiant",
+    "unit 42", "crowdstrike", "cisa", "schneier", "portswigger",
+    "trail of bits", "project zero",
+)
+
+_HEURISTIC_STOPWORDS = {
+    "show", "me", "the", "a", "an", "of", "about", "from", "with", "for",
+    "recent", "recently", "recenty", "latest", "newest", "fresh",
+    "this", "last", "year", "years", "first",
+    "news", "papers", "paper", "blogs", "blog", "posts", "post",
+    "report", "reports", "tutorial", "tutorials", "release", "releases",
+}
+
+
+def _heuristic_nl_filter(query: str, current_year: int) -> dict[str, Any]:
+    """Deterministic parser for common feed-search phrases.
+
+    Runs before the LLM so obvious queries (e.g. "show me recent security
+    reports") don't depend on model behavior, and tolerates typos like
+    "recenty". Returns whichever fields it could pin down.
+    """
+    text = query.strip()
+    low = text.lower()
+    for typo, fix in _TYPO_FIXES.items():
+        low = re.sub(rf"\b{re.escape(typo)}\b", fix, low)
+
+    out: dict[str, Any] = {}
+
+    if re.search(r"\b(ingested|crawled|fetched)\b", low):
+        out["sort"] = "fetched_desc"
+    elif re.search(r"\b(recent|latest|newest|fresh)\b", low):
+        out["sort"] = "date_desc"
+    elif "oldest" in low:
+        out["sort"] = "date_asc"
+
+    if "this year" in low:
+        out["year"] = current_year
+    elif "last year" in low:
+        out["year"] = current_year - 1
+    else:
+        m = re.search(r"\b(199\d|20\d{2}|2100)\b", low)
+        if m:
+            year = int(m.group(1))
+            if 1990 <= year <= current_year + 1:
+                out["year"] = year
+
+    for phrase, topic in _TOPIC_ALIASES.items():
+        if re.search(rf"\b{re.escape(phrase)}\b", low):
+            out["topic"] = topic
+            break
+
+    if re.search(r"\b(paper|papers|arxiv|preprint|preprints)\b", low):
+        out["content_type"] = "paper"
+    elif re.search(r"\b(report|reports|news|incident|breach|advisory|advisories|alert|alerts)\b", low):
+        out["content_type"] = "news"
+    elif re.search(r"\b(tutorial|tutorials|guide|walkthrough)\b", low):
+        out["content_type"] = "tutorial"
+    elif re.search(r"\b(release|releases|oss release)\b", low):
+        out["content_type"] = "oss_release"
+    elif re.search(r"\b(announcement|launch)\b", low):
+        out["content_type"] = "lab_announcement"
+    elif re.search(r"\b(blog|engineering)\b", low):
+        out["content_type"] = "blog"
+
+    for src in _SOURCE_HINTS:
+        if src in low:
+            out["source"] = src
+            break
+
+    # AI-lab posts are lab_announcement, not blog (matches the LLM prompt rule).
+    _AI_LABS = {"openai", "deepmind", "anthropic", "google", "meta",
+                "microsoft", "nvidia", "apple", "bair", "sail"}
+    if out.get("content_type") == "blog" and out.get("source") in _AI_LABS:
+        out["content_type"] = "lab_announcement"
+
+    if re.search(r"\b(report|reports)\b", low):
+        out["q"] = "report"
+    else:
+        tokens = re.findall(r"[a-zA-Z][a-zA-Z0-9_-]+", low)
+        residual = [
+            t for t in tokens
+            if t not in _HEURISTIC_STOPWORDS
+            and t not in _TOPIC_ALIASES
+            and t not in _SOURCE_HINTS
+            and len(t) > 2
+        ]
+        if residual:
+            out["q"] = " ".join(residual[:6])
+
+    return out
+
+
 def nl_filter(query: str, current_year: int) -> dict[str, Any]:
     """Extract structured filters from a natural-language search query.
 
-    Returns a dict with optional keys: topic, content_type, source, year, q.
+    Returns a dict with optional keys: topic, content_type, source, year, q, sort.
     Falls back to {"q": query} on any LLM/parse failure so the caller still
     has something useful.
     """
+    heuristic = _heuristic_nl_filter(query, current_year=current_year)
+    structured_keys = {"topic", "content_type", "source", "year", "sort"}
+    if len(structured_keys & heuristic.keys()) >= 2:
+        return heuristic
+
     user = (
         f"Today's year: {current_year}.\n"
         f"Allowed topics: {', '.join(t for t in TOPICS if t != 'Other')}\n"
         f"Allowed content_types: {', '.join(c for c in CONTENT_TYPES if c != 'other')}\n"
-        "Allowed sort values: date_desc (newest), date_asc (oldest), "
-        "fetched_desc (recently ingested), fetched_asc.\n\n"
+        "Allowed sort values: smart (best overall), "
+        "date_desc (newest by published date), "
+        "date_asc (oldest by published date), "
+        "fetched_desc (recently ingested), fetched_asc.\n"
+        "When the user says recent/latest/newest/fresh, prefer date_desc. "
+        "Use fetched_desc only when they explicitly mean recently ingested, crawled, or fetched.\n\n"
         "Important taxonomy hints:\n"
         "- Posts from major AI labs (OpenAI, DeepMind, Anthropic, Google Research, "
         "Meta AI, Microsoft Research, NVIDIA, Apple, BAIR, SAIL) are categorized "
@@ -240,7 +483,9 @@ def nl_filter(query: str, current_year: int) -> dict[str, Any]:
         '  "robotics tutorials"                            -> '
         '{"topic":"Robotics","content_type":"tutorial","source":null,"year":null,"q":null,"sort":null}\n'
         '  "transformer attention"                         -> '
-        '{"topic":null,"content_type":null,"source":null,"year":null,"q":"transformer attention","sort":null}\n\n'
+        '{"topic":null,"content_type":null,"source":null,"year":null,"q":"transformer attention","sort":null}\n'
+        '  "show me the recent security report"            -> '
+        '{"topic":"Security","content_type":"news","source":null,"year":null,"q":"report","sort":"date_desc"}\n\n'
         f"User query: {query}\n\nRespond with JSON only."
     )
     try:
@@ -273,7 +518,7 @@ def nl_filter(query: str, current_year: int) -> dict[str, Any]:
 
     sort = data.get("sort")
     if isinstance(sort, str) and sort in {
-        "date_desc", "date_asc", "fetched_desc", "fetched_asc",
+        "smart", "date_desc", "date_asc", "fetched_desc", "fetched_asc",
     }:
         out["sort"] = sort
 
@@ -306,3 +551,16 @@ def _extract_json(s: str) -> dict[str, Any]:
     if not m:
         raise ValueError("no JSON found in LLM response")
     return json.loads(m.group(0))
+
+
+def _coerce_unit_float(v: Any) -> float | None:
+    if isinstance(v, (int, float)):
+        out = float(v)
+    elif isinstance(v, str):
+        try:
+            out = float(v.strip())
+        except ValueError:
+            return None
+    else:
+        return None
+    return out if 0.0 <= out <= 1.0 else None

@@ -85,9 +85,11 @@ def ingest_source(db: Session, source: Source, workers: int | None = None) -> di
         if target is not None:
             if target.dedup_group_id is None:
                 target.dedup_group_id = uuid.uuid4()
+            _record_exposure(target, source, raw)
             counts["dup"] += 1
             continue
 
+        exposure_source = _exposure_source(source, raw)
         item = Item(
             source_id=source.id,
             canonical_url=canonical,
@@ -100,6 +102,8 @@ def ingest_source(db: Session, source: Source, workers: int | None = None) -> di
             lab=raw.lab,
             venue=raw.venue,
             is_canonical=True,
+            exposure_count=1,
+            exposure_sources=[exposure_source] if exposure_source else [],
         )
         db.add(item)
         db.flush()
@@ -121,6 +125,47 @@ def ingest_source(db: Session, source: Source, workers: int | None = None) -> di
             _enrich_one(item_id)
 
     return counts
+
+
+def _exposure_source(source: Source, raw: RawItem) -> str:
+    """Name the entity that independently exposed the story.
+
+    For normal feeds this is the Source row. For aggregators such as Doonsec,
+    the WeChat account carried in the raw item is the useful exposure source.
+    """
+    if (source.extra or {}).get("adapter") == "doonsec":
+        if raw.lab:
+            return raw.lab
+        if raw.authors:
+            return str(raw.authors[0])
+    return source.name
+
+
+def _record_exposure(target: Item, source: Source, raw: RawItem) -> None:
+    label = _exposure_source(source, raw)
+    if not label:
+        return
+    sources = _known_exposure_sources(target)
+    if label not in sources:
+        sources.append(label)
+    target.exposure_sources = sources[:20]
+    target.exposure_count = max(target.exposure_count or 1, len(sources))
+
+
+def _known_exposure_sources(target: Item) -> list[str]:
+    labels = [str(x) for x in (target.exposure_sources or []) if str(x)]
+    if target.lab:
+        labels.append(target.lab)
+    if target.source and not (
+        (target.source.extra or {}).get("adapter") == "doonsec" and labels
+    ):
+        labels.append(target.source.name)
+
+    deduped: list[str] = []
+    for label in labels:
+        if label not in deduped:
+            deduped.append(label)
+    return deduped
 
 
 # ---------- Celery entry points ----------

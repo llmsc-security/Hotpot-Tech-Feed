@@ -65,4 +65,53 @@ sources:
   - { name: "Lobsters",                 kind: rss, url: "https://lobste.rs/rss",                              extra: { content_type: news }, trust_score: 0.65 }
   - { name: "r/MachineLearning",        kind: rss, url: "https://www.reddit.com/r/MachineLearning/.rss",      extra: { content_type: news }, trust_score: 0.55 }
   - { name: "r/programming",            kind: rss, url: "https://www.reddit.com/r/programming/.rss",          extra: { content_type: news }, trust_score: 0.5  }
+  - { name: "量子位 QbitAI",             kind: rss, url: "https://www.qbitai.com/feed", language: zh,          extra: { content_type: news, max_results: 20, max_age_days: 60 }, trust_score: 0.75 }
   # Papers with Code RSS disabled: paperswithcode.com/latest/rss.xml → 302 to HF papers (no RSS).
+
+  # ====================== Security: CVE / advisories ======================
+  # NVD RSS disabled: nvd.nist.gov/feeds/xml/cve/misc/nvd-rss.xml → 404, NVD has migrated to a JSON-only API.
+  - { name: "CVE.org commits feed",     kind: rss, url: "https://github.com/CVEProject/cvelistV5/commits/main.atom",              extra: { content_type: news }, trust_score: 0.95 }
+  - { name: "CISA Known Exploited Vulns", kind: rss, url: "https://www.cisa.gov/cybersecurity-advisories/all.xml",                extra: { content_type: news }, trust_score: 0.95 }
+  - { name: "US-CERT Alerts",           kind: rss, url: "https://www.cisa.gov/uscert/ncas/alerts.xml",                            extra: { content_type: news }, trust_score: 0.9  }
+  # GitHub Security Advisories disabled: github.com/advisories.atom → 406 (atom feed retired, only JSON API now).
+  - { name: "Full Disclosure Mailing List", kind: rss, url: "https://seclists.org/rss/fulldisclosure.rss",                        extra: { content_type: news }, trust_score: 0.7  }
+  # oss-security ML disabled: openwall.com no longer ships per-list RSS, only the HTML archive.
+  - { name: "r/netsec",                 kind: rss, url: "https://www.reddit.com/r/netsec/.rss",                                   extra: { content_type: news }, trust_score: 0.7  }
+  - { name: "Doonsec WeChat Security",  kind: rss, url: "https://wechat.doonsec.com/news/", language: zh, extra: { adapter: doonsec, content_type: news, max_results: 120, max_age_days: 60, categories: [ { id: -7, name: "预警", pages: 2, max_results: 50, min_quality: 0.05 }, { id: -14, name: "复现", pages: 2, max_results: 35, min_quality: 0.35 }, { id: -1, name: "原创", pages: 1, max_results: 25, min_quality: 0.25 }, { id: -100, name: "热点", pages: 1, max_results: 25, min_quality: 0.15 }, { id: -10, name: "瓜田", pages: 1, max_results: 12, min_read_num: 1500 } ], include_keywords: [ "CVE", "漏洞", "预警", "复现", "分析", "攻击", "威胁", "APT", "勒索", "供应链", "代码审计", "RCE", "提权", "安全研究", "AI安全", "数据泄露", "被黑", "黑客", "事故", "安全事件" ], exclude_keywords: [ "招聘", "内推", "特惠", "优惠", "课程", "培训", "直播预告", "劳动节", "放假", "节日", "会员", "加群", "抽奖" ] }, trust_score: 0.8 }
+  - { name: "FreeBuf",                  kind: rss, url: "https://www.freebuf.com/feed", language: zh,                             extra: { content_type: news, max_results: 30, max_age_days: 120, extract_full_text: true }, trust_score: 0.72 }
+  - { name: "安全客 Anquanke",           kind: rss, url: "https://api.anquanke.com/data/v1/rss", language: zh,                     extra: { content_type: news, max_results: 30, max_age_days: 120, extract_full_text: true }, trust_score: 0.75 }
+  - { name: "先知安全技术社区",           kind: rss, url: "https://xz.aliyun.com/feed", language: zh,                               extra: { content_type: tutorial, max_results: 40, max_age_days: 180, extract_full_text: true }, trust_score: 0.82 }
+  - { name: "知道创宇404 Paper",         kind: rss, url: "https://paper.seebug.org/rss/", language: zh,                            extra: { content_type: blog, max_results: 30, max_age_days: 180, extract_full_text: true }, trust_score: 0.85 }
+  - { name: "安全脉搏 SecPulse",         kind: rss, url: "https://www.secpulse.com/feed", language: zh,                            extra: { content_type: blog, max_results: 25, max_age_days: 120, extract_full_text: true }, trust_score: 0.72 }
+  - { name: "嘶吼 RoarTalk",             kind: rss, url: "https://www.4hou.com/feed", language: zh,                                extra: { content_type: news, max_results: 25, max_age_days: 120, extract_full_text: true }, trust_score: 0.70 }
+  - { name: "SecWiki News",             kind: rss, url: "https://www.sec-wiki.com/news/rss", language: zh,                         extra: { content_type: news, max_results: 15, max_age_days: 30 }, trust_score: 0.65 }
+  - { name: "离别歌 Phithon",            kind: rss, url: "https://www.leavesongs.com/rss.php", language: zh,                        extra: { content_type: blog, max_results: 20, max_age_days: 365, extract_full_text: true }, trust_score: 0.85 }
+  - { name: "360CERT",                  kind: rss, url: "https://cert.360.cn/feed", language: zh,                                  extra: { content_type: news, max_results: 20, max_age_days: 1200, verify_ssl: false }, trust_score: 0.75 }
+
+  # ====================== Security: vendor / research labs ======================
+  - { name: "Google Project Zero",      kind: rss, url: "https://googleprojectzero.blogspot.com/feeds/posts/default",  lab: "Project Zero", extra: { content_type: lab_announcement }, trust_score: 0.95 }
+  - { name: "Google Security Blog",     kind: rss, url: "https://security.googleblog.com/feeds/posts/default",         lab: "Google Security", extra: { content_type: lab_announcement }, trust_score: 0.9 }
+  # Microsoft Security Response Center disabled: msrc.microsoft.com no longer ships an RSS feed (the /feeds endpoint returns a stub).
+  - { name: "Microsoft Threat Intel",   kind: rss, url: "https://www.microsoft.com/en-us/security/blog/feed/",         lab: "Microsoft Threat Intel", extra: { content_type: blog }, trust_score: 0.85 }
+  - { name: "GitHub Security Lab",      kind: rss, url: "https://github.blog/category/security/feed/",                 lab: "GitHub Security Lab", extra: { content_type: blog }, trust_score: 0.85 }
+  - { name: "Cisco Talos",              kind: rss, url: "https://blog.talosintelligence.com/rss/",                     lab: "Talos",        extra: { content_type: blog }, trust_score: 0.85 }
+  - { name: "Mandiant Threat Research", kind: rss, url: "https://www.mandiant.com/resources/blog/rss.xml",             lab: "Mandiant",     extra: { content_type: blog }, trust_score: 0.9  }
+  - { name: "Unit 42 (Palo Alto)",      kind: rss, url: "https://unit42.paloaltonetworks.com/feed/",                   lab: "Unit 42",      extra: { content_type: blog }, trust_score: 0.85 }
+  - { name: "CrowdStrike Blog",         kind: rss, url: "https://www.crowdstrike.com/blog/feed/",                      lab: "CrowdStrike",  extra: { content_type: blog }, trust_score: 0.8  }
+  - { name: "Sentinel Labs",            kind: rss, url: "https://www.sentinelone.com/labs/feed/",                      lab: "SentinelLabs", extra: { content_type: blog }, trust_score: 0.8  }
+  - { name: "Trail of Bits Blog",       kind: rss, url: "https://blog.trailofbits.com/feed/",                          lab: "Trail of Bits",extra: { content_type: blog }, trust_score: 0.9  }
+  - { name: "PortSwigger Research",     kind: rss, url: "https://portswigger.net/research/rss",                        lab: "PortSwigger",  extra: { content_type: blog }, trust_score: 0.9  }
+  - { name: "Project Discovery Blog",   kind: rss, url: "https://blog.projectdiscovery.io/rss/",                       lab: "ProjectDiscovery", extra: { content_type: blog }, trust_score: 0.8 }
+  - { name: "Rapid7 Blog",              kind: rss, url: "https://www.rapid7.com/blog/rss/",                            lab: "Rapid7",       extra: { content_type: blog }, trust_score: 0.75 }
+
+  # ====================== Security: news / journalism ======================
+  - { name: "Krebs on Security",        kind: rss, url: "https://krebsonsecurity.com/feed/",                                       extra: { content_type: news }, trust_score: 0.9  }
+  - { name: "The Hacker News",          kind: rss, url: "https://feeds.feedburner.com/TheHackersNews",                             extra: { content_type: news }, trust_score: 0.7  }
+  - { name: "BleepingComputer",         kind: rss, url: "https://www.bleepingcomputer.com/feed/",                                  extra: { content_type: news }, trust_score: 0.75 }
+  - { name: "Schneier on Security",     kind: rss, url: "https://www.schneier.com/feed/atom/",                                     extra: { content_type: blog }, trust_score: 0.9  }
+  - { name: "Dark Reading",             kind: rss, url: "https://www.darkreading.com/rss.xml",                                     extra: { content_type: news }, trust_score: 0.7  }
+  - { name: "SecurityWeek",             kind: rss, url: "https://www.securityweek.com/feed/",                                      extra: { content_type: news }, trust_score: 0.7  }
+
+  # ====================== Security: arXiv ======================
+  # cs.CR is already above; add the related crypto/network categories.
+  - { name: "arXiv cs.NI",              kind: arxiv, url: "https://arxiv.org/list/cs.NI/recent",  language: en, extra: { category: "cs.NI", max_results: 40 }, trust_score: 0.85 }

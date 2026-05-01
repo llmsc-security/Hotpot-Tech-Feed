@@ -84,6 +84,10 @@ class Item(Base):
     click_count: Mapped[int] = mapped_column(
         Integer, default=0, server_default="0", nullable=False, index=True
     )
+    exposure_count: Mapped[int] = mapped_column(
+        Integer, default=1, server_default="1", nullable=False, index=True
+    )
+    exposure_sources: Mapped[list] = mapped_column(JSONB, default=list, nullable=False)
 
     # ---- relationships ----
     source = relationship("Source", back_populates="items")

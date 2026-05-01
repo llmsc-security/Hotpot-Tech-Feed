@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
@@ -25,9 +25,11 @@ const CONTENT_TYPE_LABEL: Record<string, string> = {
 };
 
 export default function SourcesDrawer({ onClose }: { onClose: () => void }) {
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  const [categoryShown, setCategoryShown] = useState(3);
   const { data, isLoading, error } = useQuery({
-    queryKey: ["sources-drawer"],
-    queryFn: listSources,
+    queryKey: ["sources-drawer", selectedCategory],
+    queryFn: () => listSources({ category: selectedCategory }),
     staleTime: 60_000,
   });
   const categories = useQuery({
@@ -79,14 +81,14 @@ export default function SourcesDrawer({ onClose }: { onClose: () => void }) {
 
         <div className="flex-1 overflow-y-auto px-2 py-2 space-y-3">
           <DiscoverySection />
-          <CollectionCard
-            title="Categories"
-            subtitle="user-confirmed primary category"
-            items={(categories.data ?? []).slice(0, 3).map((b: CategoryBucket) => ({
-              label: b.category,
-              count: b.count,
-            }))}
-            total={categories.data?.length ?? 0}
+          <CategoryFilterCard
+            buckets={categories.data ?? []}
+            shown={categoryShown}
+            setShown={setCategoryShown}
+            selected={selectedCategory}
+            onToggle={(cat) => {
+              setSelectedCategory((cur) => (cur === cat ? null : cat));
+            }}
           />
           <CollectionCard
             title="Content types"
@@ -99,13 +101,34 @@ export default function SourcesDrawer({ onClose }: { onClose: () => void }) {
           />
 
           <div>
-            <p className="px-3 pt-1 pb-1.5 text-[10px] uppercase tracking-wide text-slate-500">
-              Sources ({data?.total ?? "…"})
-            </p>
+            <div className="flex items-center justify-between px-3 pt-1 pb-1.5">
+              <p className="text-[10px] uppercase tracking-wide text-slate-500">
+                Sources ({data?.total ?? "…"})
+                {selectedCategory && (
+                  <span className="ml-1 normal-case tracking-normal text-slate-700">
+                    in <span className="font-semibold">{selectedCategory}</span>
+                  </span>
+                )}
+              </p>
+              {selectedCategory && (
+                <button
+                  type="button"
+                  onClick={() => setSelectedCategory(null)}
+                  className="text-[10px] text-blue-600 hover:underline"
+                >
+                  clear
+                </button>
+              )}
+            </div>
             {isLoading && <p className="text-sm text-slate-500 px-3 py-4">Loading…</p>}
             {error && (
               <p className="text-sm text-red-600 px-3 py-4">
                 Failed to load sources.
+              </p>
+            )}
+            {!isLoading && data && data.sources.length === 0 && (
+              <p className="text-sm text-slate-500 px-3 py-4 italic">
+                No sources have items in this category yet.
               </p>
             )}
             {data?.sources?.map((s) => (
@@ -165,6 +188,106 @@ function CollectionCard({
             </li>
           ))}
         </ul>
+      )}
+    </div>
+  );
+}
+
+function CategoryFilterCard({
+  buckets,
+  shown,
+  setShown,
+  selected,
+  onToggle,
+}: {
+  buckets: CategoryBucket[];
+  shown: number;
+  setShown: (n: number) => void;
+  selected: string | null;
+  onToggle: (cat: string) => void;
+}) {
+  const total = buckets.length;
+  const visible = buckets.slice(0, shown);
+  const max = Math.max(1, ...visible.map((b) => b.count));
+  const canExpand = shown < total;
+  const canCollapse = shown > 3;
+
+  return (
+    <div className="rounded-xl border border-slate-200 bg-gradient-to-br from-amber-50 via-white to-rose-50 px-3 py-2.5">
+      <div className="flex items-baseline justify-between mb-1.5">
+        <div>
+          <h3 className="text-sm font-semibold text-slate-900">Categories</h3>
+          <p className="text-[10px] text-slate-500">
+            click to filter the source list below
+          </p>
+        </div>
+        <span className="text-[10px] text-slate-400 tabular-nums">
+          {Math.min(shown, total)} of {total}
+        </span>
+      </div>
+      {visible.length === 0 ? (
+        <p className="text-xs text-slate-500 italic">no data yet</p>
+      ) : (
+        <ul className="space-y-1">
+          {visible.map((b, i) => {
+            const isActive = selected === b.category;
+            return (
+              <li key={b.category}>
+                <button
+                  type="button"
+                  onClick={() => onToggle(b.category)}
+                  className={`w-full flex items-center gap-2 text-xs px-1.5 py-0.5 rounded transition-colors ${
+                    isActive
+                      ? "bg-amber-200/80 ring-1 ring-amber-400"
+                      : "hover:bg-amber-100/60"
+                  }`}
+                >
+                  <span className="text-[10px] uppercase tracking-wide text-slate-400 w-5 text-left">
+                    #{i + 1}
+                  </span>
+                  <span
+                    className={`font-medium flex-1 truncate text-left ${
+                      isActive ? "text-amber-900" : "text-slate-900"
+                    }`}
+                  >
+                    {b.category}
+                  </span>
+                  <div className="w-20 h-1.5 rounded-full bg-slate-100 overflow-hidden">
+                    <div
+                      className={`h-full ${isActive ? "bg-amber-600" : "bg-brand-amber"}`}
+                      style={{ width: `${(b.count / max) * 100}%` }}
+                    />
+                  </div>
+                  <span className="text-slate-500 tabular-nums w-12 text-right">
+                    {b.count.toLocaleString()}
+                  </span>
+                </button>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+      {(canExpand || canCollapse) && (
+        <div className="flex items-center gap-3 mt-1.5 pl-1.5">
+          {canExpand && (
+            <button
+              type="button"
+              onClick={() => setShown(Math.min(shown + 5, total))}
+              className="text-[11px] text-blue-600 hover:underline"
+            >
+              show more ({Math.min(5, total - shown)})
+            </button>
+          )}
+          {canCollapse && (
+            <button
+              type="button"
+              onClick={() => setShown(Math.max(3, shown - 5))}
+              className="text-[11px] text-slate-500 hover:underline"
+            >
+              show less
+            </button>
+          )}
+        </div>
       )}
     </div>
   );

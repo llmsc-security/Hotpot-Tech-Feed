@@ -25,6 +25,7 @@ from app.adapters.base import BaseAdapter
 from app.core.logging import get_logger
 from app.models.item import ContentType
 from app.schemas.item import RawItem
+from app.services.extract import extract_article_text
 
 log = get_logger(__name__)
 
@@ -58,15 +59,19 @@ class HtmlSitemapAdapter(BaseAdapter):
             entries = entries[:max_results]
 
             for url, lastmod in entries:
-                title = _fetch_title(client, url) or _slug_title(url)
+                page = _fetch_page(client, url)
+                title = _page_title(page) if page else None
+                title = title or _slug_title(url)
                 if not title:
                     continue
+                excerpt = extract_article_text(page, url=url, limit=3000) if page else None
                 yield RawItem(
                     source_id=self.source.id,
                     url=url,
                     title=title,
                     published_at=lastmod,
                     language=self.source.language,
+                    excerpt=excerpt,
                     content_type=content_type,
                     lab=lab,
                     extra={"sitemap": True},
@@ -125,18 +130,23 @@ def _parse_date(s: str) -> datetime | None:
     return None
 
 
-def _fetch_title(client, url: str) -> str | None:
+def _fetch_page(client, url: str) -> str | None:
     try:
         resp = client.get(url)
         if resp.status_code != 200:
             return None
-        text = resp.text
     except Exception:
         return None
-    m = _OG_TITLE_RE.search(text)
+    return resp.text
+
+
+def _page_title(html: str | None) -> str | None:
+    if not html:
+        return None
+    m = _OG_TITLE_RE.search(html)
     if m:
         return _clean(m.group(1))
-    m = _TITLE_RE.search(text)
+    m = _TITLE_RE.search(html)
     if m:
         return _clean(m.group(1))
     return None

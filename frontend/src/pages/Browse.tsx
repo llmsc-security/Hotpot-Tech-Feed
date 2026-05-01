@@ -1,14 +1,24 @@
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
-import { listItems, nlSearch, recentSearches, type NLFilter } from "../api";
+import {
+  bumpItemClick,
+  itemSuggestions,
+  listHotItems,
+  listItems,
+  nlSearch,
+  type NLFilter,
+} from "../api";
 import ItemCard from "../components/ItemCard";
 import { useConsent } from "../hooks/useConsent";
+import type { HotItem } from "../types";
 
 const TIPS = [
   "ML papers from arxiv this year",
   "openai 2025 blog posts, newest first",
   "wechat: large model news",
+  "中文安全：漏洞预警和复现",
+  "Doonsec CVE warnings from WeChat",
   "robotics tutorials, oldest first",
   "security papers about transformer attention",
 ];
@@ -24,7 +34,7 @@ const FILTER_LABELS: Record<keyof NLFilter, string> = {
 
 type Filters = NLFilter;
 
-const DEFAULT_FILTERS: Filters = { sort: "date_desc" };
+const DEFAULT_FILTERS: Filters = { sort: "smart" };
 
 export default function Browse() {
   const [askInput, setAskInput] = useState<string>("");
@@ -32,16 +42,20 @@ export default function Browse() {
   const [askError, setAskError] = useState<string | null>(null);
   const [explanation, setExplanation] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [suggestQuery, setSuggestQuery] = useState("");
   const inputWrapRef = useRef<HTMLDivElement | null>(null);
   const qc = useQueryClient();
   const { consent, set: setConsent } = useConsent();
 
-  const history = useQuery({
-    queryKey: ["recent-searches"],
-    queryFn: () => recentSearches(20),
+  const suggestions = useQuery({
+    queryKey: ["item-suggestions", suggestQuery, consent],
+    queryFn: () =>
+      itemSuggestions(suggestQuery, {
+        limit: 10,
+        includeRecent: consent === "accepted",
+      }),
     staleTime: 30_000,
-    // Only fetch the recall list once the user has accepted logging.
-    enabled: consent === "accepted",
+    enabled: historyOpen,
   });
 
   const params = {
@@ -52,7 +66,7 @@ export default function Browse() {
     source: filters.source,
     year: filters.year,
     q: filters.q,
-    sort: filters.sort ?? "date_desc",
+    sort: filters.sort ?? "smart",
   };
 
   const items = useQuery({
@@ -65,14 +79,14 @@ export default function Browse() {
     onSuccess: (parsed) => {
       setAskError(null);
       // Each Ask is a full replacement: the LLM saw the whole user intent.
-      // sort defaults to date_desc when the user didn't specify.
-      const next: Filters = { sort: parsed.sort ?? "date_desc", ...parsed };
-      if (!parsed.sort) next.sort = "date_desc";
+      // sort defaults to smart when the user didn't specify.
+      const next: Filters = { sort: parsed.sort ?? "smart", ...parsed };
+      if (!parsed.sort) next.sort = "smart";
       setFilters(next);
       const summary = describeFilters(next);
       setExplanation(summary || "no filters extracted — showing everything");
-      // The backend just logged this query — refresh the recall list.
-      qc.invalidateQueries({ queryKey: ["recent-searches"] });
+      // The backend may have logged this query, so refresh typeahead recall.
+      qc.invalidateQueries({ queryKey: ["item-suggestions"] });
       setHistoryOpen(false);
     },
     onError: (err: Error) => {
@@ -105,7 +119,7 @@ export default function Browse() {
   function removeFilter(key: keyof Filters) {
     const next = { ...filters };
     delete next[key];
-    if (key === "sort") next.sort = "date_desc";
+    if (key === "sort") next.sort = "smart";
     setFilters(next);
     setExplanation(describeFilters(next) || "no filters — showing everything");
   }
@@ -119,7 +133,20 @@ export default function Browse() {
 
   const activeChips = (Object.keys(filters) as (keyof Filters)[])
     .filter((k) => filters[k] !== undefined && filters[k] !== "" &&
-                   !(k === "sort" && filters.sort === "date_desc"));
+                   !(k === "sort" && filters.sort === "smart"));
+  const showHot = activeChips.length === 0;
+
+  const hotItems = useQuery({
+    queryKey: ["hot-items", 20, 14],
+    queryFn: () => listHotItems({ limit: 20, windowDays: 14 }),
+    staleTime: 60_000,
+    enabled: showHot,
+  });
+
+  useEffect(() => {
+    const t = window.setTimeout(() => setSuggestQuery(askInput.trim()), 180);
+    return () => window.clearTimeout(t);
+  }, [askInput]);
 
   return (
     <div>
@@ -138,7 +165,10 @@ export default function Browse() {
           <input
             type="text"
             value={askInput}
-            onChange={(e) => setAskInput(e.target.value)}
+            onChange={(e) => {
+              setAskInput(e.target.value);
+              setHistoryOpen(true);
+            }}
             onFocus={() => setHistoryOpen(true)}
             onKeyDown={(e) => {
               if (e.key === "Enter") runAsk();
@@ -161,7 +191,7 @@ export default function Browse() {
             <span>{ask.isPending ? "Thinking…" : "Ask"}</span>
           </button>
 
-          {historyOpen && history.data && history.data.length > 0 && (
+          {historyOpen && suggestions.data && suggestions.data.length > 0 && (
             <div
               className="absolute z-30 left-0 right-0 top-[calc(100%+4px)]
                          max-h-72 overflow-y-auto rounded-lg border border-slate-200
@@ -169,30 +199,28 @@ export default function Browse() {
             >
               <div className="px-3 py-1.5 text-[10px] uppercase tracking-wide
                               text-slate-500 border-b border-slate-100 flex items-center justify-between">
-                <span>recent queries</span>
+                <span>suggestions</span>
                 <span className="opacity-70">esc to close</span>
               </div>
-              {history.data
-                .filter((h) =>
-                  askInput.trim()
-                    ? h.query.toLowerCase().includes(askInput.toLowerCase())
-                    : true
-                )
+              {suggestions.data
                 .slice(0, 12)
-                .map((h) => (
+                .map((s) => (
                   <button
-                    key={h.query + h.last_used_at}
+                    key={s.type + s.query}
                     type="button"
                     onMouseDown={(e) => {
                       e.preventDefault();
-                      runAsk(h.query);
+                      runAsk(s.query);
                     }}
-                    className="block w-full text-left px-3 py-1.5 hover:bg-slate-50
+                    className="flex w-full items-center gap-2 text-left px-3 py-1.5 hover:bg-slate-50
                                border-b border-slate-50 last:border-0"
                   >
-                    <span className="text-slate-800">{h.query}</span>
-                    <span className="float-right text-xs text-slate-400">
-                      {formatRelative(h.last_used_at)}
+                    <span className="w-20 shrink-0 text-[10px] uppercase tracking-wide text-slate-400">
+                      {formatSuggestionType(s.type)}
+                    </span>
+                    <span className="min-w-0 flex-1 truncate text-slate-800">{s.label}</span>
+                    <span className="max-w-[38%] truncate text-xs text-slate-400">
+                      {s.detail ?? s.query}
                     </span>
                   </button>
                 ))}
@@ -208,8 +236,8 @@ export default function Browse() {
             <>
               your queries are saved server-side (table{" "}
               <code className="font-mono bg-slate-100 px-1 rounded">search_logs</code>
-              ) so the agent can be improved. The recall list above is a
-              shortcut: click any entry to re-run it.{" "}
+              ) so the agent can be improved. Recent queries can appear in
+              suggestions.{" "}
               <button
                 type="button"
                 onClick={() => setConsent("rejected")}
@@ -221,8 +249,8 @@ export default function Browse() {
           ) : consent === "rejected" ? (
             <>
               search-logging is <strong>off</strong> — your queries stay in
-              your browser only and the recall list is disabled. The agent
-              still works.{" "}
+              your browser only. Source, topic, and title suggestions still
+              work.{" "}
               <button
                 type="button"
                 onClick={() => setConsent("accepted")}
@@ -290,6 +318,13 @@ export default function Browse() {
         </div>
       )}
 
+      {showHot && (
+        <HotNewsGrid
+          hotItems={hotItems.data ?? []}
+          isLoading={hotItems.isLoading}
+        />
+      )}
+
       {items.isLoading && <p className="text-sm text-slate-500">Loading…</p>}
       {items.error && (
         <p className="text-sm text-red-600">
@@ -319,27 +354,132 @@ export default function Browse() {
   );
 }
 
+function HotNewsGrid({
+  hotItems,
+  isLoading,
+}: {
+  hotItems: HotItem[];
+  isLoading: boolean;
+}) {
+  if (isLoading) {
+    return (
+      <section className="mb-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+        <p className="text-sm text-slate-500">Loading hot repeated stories…</p>
+      </section>
+    );
+  }
+  if (hotItems.length === 0) return null;
+
+  return (
+    <section className="mb-6 rounded-2xl border border-slate-200 bg-slate-950 p-5 text-white shadow-sm">
+      <div className="mb-4 flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-emerald-300">
+            hot news
+          </p>
+          <h2 className="font-serif text-2xl font-bold leading-tight">
+            20 stories with repeat exposure and quality signal
+          </h2>
+        </div>
+        <p className="max-w-xl text-xs leading-relaxed text-slate-300">
+          Boosted when independent sources cover the same topic, then balanced
+          with LLM quality, freshness, source trust, and clicks.
+        </p>
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        {hotItems.slice(0, 20).map((hot, index) => {
+          const item = hot.item;
+          const dateStr = (item.published_at ?? item.fetched_at).slice(0, 10);
+          const excerpt = item.summary ?? item.excerpt;
+          return (
+            <article
+              key={item.id}
+              className="rounded-xl border border-white/10 bg-white/[0.06] p-4
+                         transition hover:-translate-y-0.5 hover:border-emerald-300/50
+                         hover:bg-white/[0.09]"
+            >
+              <div className="mb-2 flex items-center gap-2 text-[11px] text-slate-300">
+                <span className="rounded-full bg-emerald-300 px-2 py-0.5 font-bold text-slate-950">
+                  #{index + 1}
+                </span>
+                <span>{hot.source_count} source{hot.source_count === 1 ? "" : "s"}</span>
+                <span>·</span>
+                <span>{hot.support_count} exposure{hot.support_count === 1 ? "" : "s"}</span>
+                <span className="ml-auto tabular-nums text-emerald-200">
+                  {hot.hot_score.toFixed(2)}
+                </span>
+              </div>
+
+              <h3 className="line-clamp-2 font-serif text-base font-bold leading-snug">
+                <a
+                  href={item.canonical_url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="hover:text-emerald-200"
+                  onClick={() => bumpItemClick(item.id)}
+                  onAuxClick={(e) => {
+                    if (e.button === 1) bumpItemClick(item.id);
+                  }}
+                >
+                  {item.title}
+                </a>
+              </h3>
+
+              <div className="mt-2 flex flex-wrap items-center gap-1.5 text-[11px] text-slate-400">
+                <span>{dateStr}</span>
+                {hot.topic && (
+                  <>
+                    <span>·</span>
+                    <span className="truncate">{hot.topic}</span>
+                  </>
+                )}
+              </div>
+
+              {excerpt && (
+                <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-300">
+                  {excerpt}
+                </p>
+              )}
+
+              {hot.sources.length > 0 && (
+                <div className="mt-3 flex flex-wrap gap-1.5">
+                  {hot.sources.slice(0, 4).map((source) => (
+                    <span
+                      key={source}
+                      className="max-w-full truncate rounded-full border border-white/10
+                                 bg-white/[0.06] px-2 py-0.5 text-[10px] text-slate-300"
+                    >
+                      {source}
+                    </span>
+                  ))}
+                  {hot.sources.length > 4 && (
+                    <span className="rounded-full px-2 py-0.5 text-[10px] text-slate-400">
+                      +{hot.sources.length - 4}
+                    </span>
+                  )}
+                </div>
+              )}
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function describeFilters(f: Filters): string {
   const parts: string[] = [];
   if (f.topic) parts.push(`topic = ${f.topic}`);
   if (f.content_type) parts.push(`type = ${f.content_type}`);
   if (f.source) parts.push(`source ~ ${f.source}`);
   if (f.year) parts.push(`year = ${f.year}`);
-  if (f.q) parts.push(`title ~ ${f.q}`);
-  if (f.sort && f.sort !== "date_desc") parts.push(`sort = ${f.sort}`);
+  if (f.q) parts.push(`matches ~ ${f.q}`);
+  if (f.sort && f.sort !== "smart") parts.push(`sort = ${f.sort}`);
   return parts.join(" · ");
 }
 
-function formatRelative(iso: string): string {
-  const t = new Date(iso).getTime();
-  const diff = Date.now() - t;
-  if (Number.isNaN(t)) return "";
-  const m = Math.round(diff / 60000);
-  if (m < 1) return "just now";
-  if (m < 60) return `${m}m ago`;
-  const h = Math.round(m / 60);
-  if (h < 24) return `${h}h ago`;
-  const d = Math.round(h / 24);
-  if (d < 30) return `${d}d ago`;
-  return new Date(t).toISOString().slice(0, 10);
+function formatSuggestionType(type: string): string {
+  if (type === "recent_query") return "recent";
+  return type.replace("_", " ");
 }

@@ -24,8 +24,11 @@ class BaseAdapter(abc.ABC):
 
     # ---- helpers ----
     def _client(self) -> httpx.Client:
+        extra = self.source.extra or {}
+        verify = bool(extra.get("verify_ssl", True))
         return httpx.Client(
             timeout=settings.http_timeout_s,
             headers={"User-Agent": settings.user_agent},
             follow_redirects=True,
+            verify=verify,
         )

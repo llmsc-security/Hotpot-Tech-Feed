@@ -23,6 +23,7 @@ dependencies = [
   "redis>=5.0",
   "click>=8.1",
   "structlog>=24.1",
+  "trafilatura>=2.0",
 ]
 
 [project.optional-dependencies]

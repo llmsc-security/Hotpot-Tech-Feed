@@ -37,6 +37,8 @@ class ItemOut(BaseModel):
     commentary: Optional[str]
     score: float
     click_count: int = 0
+    exposure_count: int = 1
+    exposure_sources: list[str] = Field(default_factory=list)
     tags: list[TagOut] = Field(default_factory=list)
 
 
@@ -45,6 +47,16 @@ class ItemList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class HotItemOut(BaseModel):
+    item: ItemOut
+    hot_score: float
+    support_count: int
+    source_count: int
+    sources: list[str] = Field(default_factory=list)
+    topic: str
+    matched_titles: list[str] = Field(default_factory=list)
 
 
 class RawItem(BaseModel):

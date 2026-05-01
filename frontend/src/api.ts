@@ -1,10 +1,10 @@
-import type { ContentType, ItemList } from "./types";
+import type { ContentType, HotItem, ItemList } from "./types";
 
 // In dev, Vite proxies /api/* → http://localhost:8000.
 // In prod, set VITE_API_BASE to an absolute URL (e.g. https://feed.ai2wj.com).
 const BASE = (import.meta.env.VITE_API_BASE ?? "/api").replace(/\/$/, "");
 
-export type SortKey = "date_desc" | "date_asc" | "fetched_desc" | "fetched_asc";
+export type SortKey = "smart" | "date_desc" | "date_asc" | "fetched_desc" | "fetched_asc";
 
 export interface ListItemsParams {
   limit?: number;
@@ -38,6 +38,17 @@ export async function listItems(params: ListItemsParams = {}): Promise<ItemList>
   return resp.json();
 }
 
+export async function listHotItems(
+  opts: { limit?: number; windowDays?: number } = {},
+): Promise<HotItem[]> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(opts.limit ?? 20));
+  qs.set("window_days", String(opts.windowDays ?? 14));
+  const resp = await fetch(`${BASE}/items/hot?${qs}`);
+  if (!resp.ok) throw new Error(`hot items fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
 export interface SourceSummary {
   id: string;
   name: string;
@@ -57,8 +68,13 @@ export interface SourceListResp {
   total: number;
 }
 
-export async function listSources(): Promise<SourceListResp> {
-  const resp = await fetch(`${BASE}/sources`);
+export async function listSources(
+  opts: { category?: string | null } = {}
+): Promise<SourceListResp> {
+  const qs = new URLSearchParams();
+  if (opts.category) qs.set("category", opts.category);
+  const url = `${BASE}/sources${qs.size ? `?${qs}` : ""}`;
+  const resp = await fetch(url);
   if (!resp.ok) throw new Error(`sources fetch failed: ${resp.status}`);
   return resp.json();
 }
@@ -108,6 +124,26 @@ export interface RecentSearch {
 export async function recentSearches(limit = 20): Promise<RecentSearch[]> {
   const resp = await fetch(`${BASE}/items/recent-searches?limit=${limit}`);
   if (!resp.ok) throw new Error(`recent-searches failed: ${resp.status}`);
+  return resp.json();
+}
+
+export interface ItemSuggestion {
+  type: "recent_query" | "source" | "topic" | "tag" | "title" | "idea" | string;
+  label: string;
+  query: string;
+  detail: string | null;
+}
+
+export async function itemSuggestions(
+  query: string,
+  opts: { limit?: number; includeRecent?: boolean } = {},
+): Promise<ItemSuggestion[]> {
+  const qs = new URLSearchParams();
+  qs.set("q", query);
+  qs.set("limit", String(opts.limit ?? 10));
+  if (opts.includeRecent) qs.set("include_recent", "true");
+  const resp = await fetch(`${BASE}/items/suggest?${qs}`);
+  if (!resp.ok) throw new Error(`suggestions failed: ${resp.status}`);
   return resp.json();
 }
 

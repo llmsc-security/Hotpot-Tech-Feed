@@ -6,9 +6,11 @@ loaded for the nuanced rules.
 ## What this is
 
 A self-hosted CS-feed aggregator. Backend (FastAPI + Postgres + Redis +
-Qdrant) ingests RSS / arXiv / HTML sources, classifies each item with a
-self-hosted Qwen3.5 LLM, and serves a React SPA where the user searches in
-plain English. An LLM agent translates the query into structured filters.
+Qdrant) ingests RSS / arXiv / HTML-sitemap sources, classifies each item
+with a self-hosted Qwen3.5 LLM, and serves a React SPA where the user
+searches in plain English. An LLM agent translates the query into
+structured filters. Corpus spans CS research, engineering blogs, AI-lab
+announcements, and security/CVE/threat-intel feeds.
 
 ## Run / develop
 
@@ -41,12 +43,14 @@ backend/                          FastAPI + CLI (one image, two entrypoints)
   app/main.py                     FastAPI app
   app/cli.py                      `hotpot` CLI (ingest-now, enrich-all, …)
   app/api/routes/                 items, sources, contribute, health
+  app/adapters/                   arxiv, rss, html (sitemap-driven) — registered in __init__.py
   app/services/llm.py             ALL LLM calls go through _chat() here
   app/services/contribute.py      User URL → fetch → classify → ingest
   app/services/dedup.py           3-stage: canonical → fuzzy title → embeddings
   app/tasks/ingest.py             ThreadPoolExecutor-based parallel ingest
   app/models/                     SQLAlchemy ORM (Item, Source, ItemTag, SearchLog)
   alembic/versions/               migrations — add a new file, don't edit old
+  data/seed_sources.yaml          baked into the image; entrypoint reseeds on every start
 frontend/                         React + Vite + TanStack Query + Tailwind
   src/pages/Browse.tsx            "Ask Hotpot" agent UI (no manual dropdowns)
   src/components/ContributeModal.tsx
@@ -81,6 +85,26 @@ docs/                             slides.pptx generator
    from a 2 MB tarball is cheap; losing weeks of corpus + contributions is
    not.
 
+6. **`backend/data/seed_sources.yaml` is baked into the backend image** and
+   `seed_from_yaml()` matches existing rows by URL (not name). After editing
+   the YAML you must `docker compose build backend && docker compose up -d
+   backend`. If you change a `Source.url` in the DB without updating the
+   YAML, the next container restart re-creates the old row as a duplicate.
+
+7. **Adapter dispatch is by `kind`** (`arxiv | rss | html | github`). `html`
+   is a sitemap-driven adapter (`app/adapters/html.py`) for sites without
+   RSS — the URL is treated as `sitemap.xml`/`sitemapindex`, optional
+   `extra.path_pattern` regex scopes the URLs, titles come from
+   `<meta og:title>` then `<title>`. `github` has no adapter yet; do not
+   seed `kind: github` until one is added.
+
+8. **Validate any new RSS feed before adding to seed_sources.yaml.** A 200
+   response is not enough — feedparser may return zero entries (comments
+   feeds, login walls, JS-only pages, "Comments on:" stubs). Probe with
+   `httpx.get(url)` then `feedparser.parse(r.text)` and only commit if
+   `len(parsed.entries) > 0`. Many Chinese/media/lab sites need RSSHub or
+   cookies and belong in `seed_candidates.yaml`, not `seed_sources.yaml`.
+
 ## Build / verify after a change
 
 ```bash
@@ -103,3 +127,6 @@ start, so a new migration file is enough.
   oss_release | other`. Add new enum values via alembic migration.
 - Errors meant for the user (wrong contribute URL, malformed query) return
   HTTP 422 with `{message, hint}`. The frontend renders both verbatim.
+- `GET /api/sources?category=X` filters to sources with ≥1 canonical item
+  whose `primary_category == X`, with per-category item counts. Powers the
+  Categories card in `SourcesDrawer`.

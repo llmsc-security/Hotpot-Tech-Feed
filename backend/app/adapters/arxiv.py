@@ -12,7 +12,7 @@ caps total categories so a daily run stays well under the limit.
 from __future__ import annotations
 
 from collections.abc import Iterable
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 import feedparser
 from dateutil import parser as dateparser
@@ -32,6 +32,12 @@ class ArxivAdapter(BaseAdapter):
                 f"arXiv source {self.source.name!r} missing extra.category (e.g. 'cs.LG')"
             )
         max_results = int(self.source.extra.get("max_results", 50))
+        max_age_days = self.source.extra.get("max_age_days")
+        cutoff = (
+            datetime.now(timezone.utc) - timedelta(days=int(max_age_days))
+            if max_age_days is not None
+            else None
+        )
 
         params = {
             "search_query": f"cat:{category}",
@@ -55,6 +61,8 @@ class ArxivAdapter(BaseAdapter):
                 published_dt = None
             if published_dt and published_dt.tzinfo is None:
                 published_dt = published_dt.replace(tzinfo=timezone.utc)
+            if cutoff is not None and published_dt is not None and published_dt < cutoff:
+                continue
 
             authors = [a.get("name") for a in entry.get("authors", []) if a.get("name")]
             summary = (entry.get("summary") or "").strip().replace("\n", " ")

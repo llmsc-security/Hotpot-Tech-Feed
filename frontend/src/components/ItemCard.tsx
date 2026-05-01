@@ -29,13 +29,26 @@ export default function ItemCard({ item }: { item: Item }) {
         {item.source_name && <span className="truncate">{item.source_name}</span>}
         <span>·</span>
         <time>{dateStr}</time>
-        {item.click_count > 0 && (
-          <span
-            className="ml-auto inline-flex items-center gap-0.5 text-amber-700 tabular-nums"
-            title={`${item.click_count} click${item.click_count === 1 ? "" : "s"}`}
-          >
-            <span aria-hidden="true">🔥</span>
-            {item.click_count}
+        {(item.exposure_count > 1 || item.click_count > 0) && (
+          <span className="ml-auto inline-flex items-center gap-2">
+            {item.exposure_count > 1 && (
+              <span
+                className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-0.5
+                           text-emerald-700 tabular-nums"
+                title={(item.exposure_sources ?? []).slice(0, 8).join(", ")}
+              >
+                {item.exposure_count} sources
+              </span>
+            )}
+            {item.click_count > 0 && (
+              <span
+                className="inline-flex items-center gap-0.5 text-amber-700 tabular-nums"
+                title={`${item.click_count} click${item.click_count === 1 ? "" : "s"}`}
+              >
+                <span aria-hidden="true">🔥</span>
+                {item.click_count}
+              </span>
+            )}
           </span>
         )}
       </div>
