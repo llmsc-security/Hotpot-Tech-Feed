@@ -401,7 +401,71 @@ def promote_candidate(db: Session, candidate_id: uuid.UUID, *, kind: str | None 
     c.status = "promoted"
     c.promoted_to_source_id = src.id
     db.flush()
+
+    _kick_off_first_ingest(src.id, src.name)
     return src
+
+
+def _kick_off_first_ingest(source_id: uuid.UUID, source_name: str) -> None:
+    """Background ingest of a freshly promoted source so it doesn't sit empty.
+
+    Runs in a daemon thread with its own session_scope. The HTTP request that
+    triggered the promote returns immediately; the ingest progresses on its
+    own and shows up in the UI within a few minutes.
+    """
+    import threading
+
+    def _runner() -> None:
+        from app.core.db import session_scope
+        from app.tasks.ingest import ingest_source
+
+        try:
+            with session_scope() as bg_db:
+                src = bg_db.execute(select(Source).where(Source.id == source_id)).scalar_one()
+                counts = ingest_source(bg_db, src)
+                log.info("first ingest done", source=source_name, **counts)
+        except Exception as e:  # noqa: BLE001
+            log.warning("first ingest failed", source=source_name, err=str(e))
+
+    threading.Thread(target=_runner, name=f"ingest-{source_name[:20]}", daemon=True).start()
+
+
+def ingest_empty_sources(db: Session) -> dict[str, int]:
+    """Run ingest on every active source that has zero items.
+
+    Used by the host cron + the new-source backfill flow. Bypasses paused /
+    probation sources. Skips the user-contributions pseudo-source.
+    """
+    from app.services.contribute import USER_SOURCE_URL
+    from app.tasks.ingest import ingest_source
+
+    rows = db.execute(
+        select(Source)
+        .where(Source.status == SourceStatus.active)
+        .where(Source.url != USER_SOURCE_URL)
+    ).scalars().all()
+
+    out = {"checked": 0, "ingested": 0, "skipped_nonempty": 0, "fetched": 0, "new": 0}
+    for src in rows:
+        out["checked"] += 1
+        # Cheap count instead of join.
+        n = db.execute(
+            select(func.count()).select_from(Item).where(Item.source_id == src.id)
+        ).scalar_one()
+        if n > 0:
+            out["skipped_nonempty"] += 1
+            continue
+        try:
+            counts = ingest_source(db, src)
+            out["ingested"] += 1
+            out["fetched"] += int(counts.get("fetched", 0))
+            out["new"] += int(counts.get("new", 0))
+            log.info("ingest_empty source done", source=src.name, **counts)
+        except Exception as e:  # noqa: BLE001
+            log.warning("ingest_empty source failed", source=src.name, err=str(e))
+
+    log.info("ingest_empty_sources done", **out)
+    return out
 
 
 def reject_candidate(db: Session, candidate_id: uuid.UUID) -> None:

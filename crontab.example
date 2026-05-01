@@ -1,0 +1,32 @@
+# Hotpot Tech Feed — host crontab.
+#
+# Install on the host that runs the docker stack:
+#   crontab -e
+#   <paste the lines below, replacing the path>
+#   crontab -l                       # verify
+#
+# These run on YOUR machine, against YOUR docker stack. They cannot be moved
+# to the cloud `/schedule` routine because that one has no DB access.
+
+ROOT=/data/wangjian/wj_code/dl_feed/Hotpot-Tech-Feed
+LOG=$ROOT/logs
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+# Every 6 hours: pull all active sources (top up corpus, fill any empty).
+0 */6 * * *  cd $ROOT && docker compose run --rm backend hotpot ingest-now > $LOG/ingest-$(date +\%Y\%m\%d-\%H).log 2>&1
+
+# Every 30 minutes: fast pass over only-empty sources (catches just-promoted
+# candidates that the API's auto-ingest may have missed).
+30 * * * *   cd $ROOT && docker compose run --rm backend hotpot ingest-empty > $LOG/ingest-empty.log 2>&1
+
+# Hourly: source health check (HEAD each URL, mark broken).
+15 * * * *   cd $ROOT && docker compose run --rm backend hotpot health-check-sources > $LOG/health.log 2>&1
+
+# Daily 03:00 UTC: re-score sources from click data + LLM noise sample.
+0 3 * * *    cd $ROOT && docker compose run --rm backend hotpot score-sources > $LOG/score.log 2>&1
+
+# Daily 03:30 UTC: snapshot the DB to backups/ (cheap, ~2 MB).
+30 3 * * *   cd $ROOT && bash backup.sh > $LOG/backup.log 2>&1
+
+# Don't forget: mkdir -p $LOG  before installing.

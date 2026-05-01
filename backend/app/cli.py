@@ -199,6 +199,18 @@ def health_check_cmd() -> None:
         click.echo(json.dumps(health_check_sources(db), indent=2))
 
 
+@cli.command("ingest-empty")
+def ingest_empty_cmd() -> None:
+    """Run ingest on every active source that has zero items.
+
+    Useful right after promoting candidates from the Discovery queue, or as a
+    daily host-cron job to keep newly added sources from sitting empty.
+    """
+    from app.services.discovery import ingest_empty_sources
+    with session_scope() as db:
+        click.echo(json.dumps(ingest_empty_sources(db), indent=2))
+
+
 @cli.command("list-candidates")
 @click.option("--status", default="pending", show_default=True)
 @click.option("--limit", default=20, show_default=True)
