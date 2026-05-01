@@ -4,14 +4,22 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.api.routes.items import _to_out
 from app.core.db import get_db
 from app.models.item import Item
 from app.models.security_score import SecurityItemScore
-from app.schemas.security import SecurityItemList, SecurityItemOut, SecurityScoreOut
+from app.schemas.security import (
+    SecurityBucketOut,
+    SecurityItemList,
+    SecurityItemOut,
+    SecurityScoreBucketOut,
+    SecurityScoreOut,
+    SecuritySoftArticleOut,
+    SecurityStatsOut,
+)
 
 router = APIRouter(prefix="/security", tags=["security"])
 
@@ -63,6 +71,85 @@ def security_items(
         total=total,
         limit=limit,
         offset=offset,
+    )
+
+
+@router.get("/stats", response_model=SecurityStatsOut)
+def security_stats(db: Session = Depends(get_db)):
+    total = db.execute(select(func.count()).select_from(SecurityItemScore)).scalar_one()
+    accepted = db.execute(
+        select(func.count())
+        .select_from(SecurityItemScore)
+        .where(SecurityItemScore.accepted.is_(True))
+    ).scalar_one()
+    rejected = max(int(total) - int(accepted), 0)
+    version = db.execute(
+        select(SecurityItemScore.score_version)
+        .order_by(SecurityItemScore.computed_at.desc())
+        .limit(1)
+    ).scalar_one_or_none() or "security-v1"
+
+    reject_rows = db.execute(
+        select(SecurityItemScore.reject_reason, func.count())
+        .where(SecurityItemScore.accepted.is_(False))
+        .group_by(SecurityItemScore.reject_reason)
+        .order_by(func.count().desc(), SecurityItemScore.reject_reason)
+    ).all()
+
+    section_rows = db.execute(
+        select(SecurityItemScore.section, func.count())
+        .where(SecurityItemScore.accepted.is_(True))
+        .group_by(SecurityItemScore.section)
+        .order_by(func.count().desc(), SecurityItemScore.section)
+    ).all()
+
+    score_values = db.execute(select(SecurityItemScore.final_security_score)).scalars().all()
+    buckets = _score_buckets([float(x or 0.0) for x in score_values])
+
+    soft_rows = db.execute(
+        select(SecurityItemScore)
+        .join(SecurityItemScore.item)
+        .options(
+            selectinload(SecurityItemScore.item).selectinload(Item.tags),
+            selectinload(SecurityItemScore.item).selectinload(Item.source),
+        )
+        .where(SecurityItemScore.accepted.is_(False))
+        .where(SecurityItemScore.soft_article_score > 0)
+        .order_by(
+            SecurityItemScore.soft_article_score.desc(),
+            SecurityItemScore.evidence_score.asc(),
+            SecurityItemScore.final_security_score.asc(),
+        )
+        .limit(10)
+    ).scalars().unique().all()
+
+    return SecurityStatsOut(
+        score_version=version,
+        total_scored=int(total),
+        accepted=int(accepted),
+        rejected=rejected,
+        accept_rate=round((int(accepted) / int(total)) if total else 0.0, 4),
+        reject_reasons=[
+            SecurityBucketOut(key=reason or "unknown", count=int(count))
+            for reason, count in reject_rows
+        ],
+        sections=[
+            SecurityBucketOut(key=section or "all", count=int(count))
+            for section, count in section_rows
+        ],
+        score_distribution=buckets,
+        soft_article_top=[
+            SecuritySoftArticleOut(
+                item=_to_out(row.item),
+                reject_reason=row.reject_reason,
+                soft_article_score=row.soft_article_score,
+                evidence_score=row.evidence_score,
+                final_security_score=row.final_security_score,
+                badges=[str(x) for x in (row.badges or [])],
+                why_ranked=[str(x) for x in (row.why_ranked or [])],
+            )
+            for row in soft_rows
+        ],
     )
 
 
@@ -261,3 +348,28 @@ def _ensure_tz(value: datetime) -> datetime:
 
 def _reverse_alpha_key(value: str) -> tuple[int, ...]:
     return tuple(255 - ord(c) for c in value[:128])
+
+
+def _score_buckets(values: list[float]) -> list[SecurityScoreBucketOut]:
+    ranges = [
+        ("0.00-0.20", 0.0, 0.2),
+        ("0.20-0.40", 0.2, 0.4),
+        ("0.40-0.60", 0.4, 0.6),
+        ("0.60-0.80", 0.6, 0.8),
+        ("0.80-1.00", 0.8, 1.0),
+    ]
+    out: list[SecurityScoreBucketOut] = []
+    for label, lo, hi in ranges:
+        if hi >= 1.0:
+            count = sum(1 for value in values if lo <= value <= hi)
+        else:
+            count = sum(1 for value in values if lo <= value < hi)
+        out.append(
+            SecurityScoreBucketOut(
+                bucket=label,
+                min_score=lo,
+                max_score=hi,
+                count=count,
+            )
+        )
+    return out

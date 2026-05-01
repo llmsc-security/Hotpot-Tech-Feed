@@ -35,6 +35,11 @@ read_env() {
 }
 PGUSER="$(read_env POSTGRES_USER)"; PGUSER="${PGUSER:-hotpot}"
 PGDB="$(read_env POSTGRES_DB)";     PGDB="${PGDB:-hotpot}"
+DATA_DIR="$(read_env HOTPOT_DATA_DIR)"; DATA_DIR="${DATA_DIR:-./hotpot-data}"
+if [[ "$DATA_DIR" != /* ]]; then
+    DATA_DIR="$ROOT/$DATA_DIR"
+fi
+QDRANT_DATA_DIR="$DATA_DIR/qdrant"
 
 log "Unpacking $ARCHIVE"
 tar -xzf "$ARCHIVE" -C "$WORK"
@@ -66,8 +71,8 @@ if ! docker compose ps postgres --format '{{.State}}' 2>/dev/null | grep -q runn
     exit 1
 fi
 
-log "Stopping backend + worker so they don't write during restore"
-docker compose stop backend worker 2>/dev/null || true
+log "Stopping backend + worker + scheduler so they don't write during restore"
+docker compose stop backend worker scheduler 2>/dev/null || true
 
 log "Wiping current Postgres database"
 docker compose exec -T postgres \
@@ -81,13 +86,11 @@ docker compose exec -T postgres \
     < "$WORK/postgres.dump"
 
 if [ -f "$WORK/qdrant.tar.gz" ]; then
-    log "Restoring Qdrant volume from snapshot"
+    log "Restoring Qdrant host data from snapshot"
     docker compose stop qdrant 2>/dev/null || true
-    docker run --rm \
-        -v hotpot-tech-feed_hotpot_qdrant:/data \
-        -v "$WORK":/in \
-        alpine:3.19 \
-        sh -c "rm -rf /data/* /data/..?* /data/.[!.]* 2>/dev/null; tar -xzf /in/qdrant.tar.gz -C /data"
+    mkdir -p "$QDRANT_DATA_DIR"
+    rm -rf "$QDRANT_DATA_DIR"/* "$QDRANT_DATA_DIR"/..?* "$QDRANT_DATA_DIR"/.[!.]* 2>/dev/null || true
+    tar -xzf "$WORK/qdrant.tar.gz" -C "$QDRANT_DATA_DIR"
     docker compose start qdrant
 else
     warn "No qdrant.tar.gz in archive — skipping (only matters if EMBEDDINGS_ENABLED=true)."

@@ -6,6 +6,7 @@ import type {
   SecurityItemList,
   SecuritySection,
   SecuritySort,
+  SecurityStats,
 } from "./types";
 
 // In dev, Vite proxies /api/* → http://localhost:8000.
@@ -82,6 +83,12 @@ export async function listSecurityItems(
   qs.set("sort", opts.sort ?? "score_desc");
   const resp = await fetch(`${BASE}/security/items?${qs}`);
   if (!resp.ok) throw new Error(`security items fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function getSecurityStats(): Promise<SecurityStats> {
+  const resp = await fetch(`${BASE}/security/stats`);
+  if (!resp.ok) throw new Error(`security stats fetch failed: ${resp.status}`);
   return resp.json();
 }
 

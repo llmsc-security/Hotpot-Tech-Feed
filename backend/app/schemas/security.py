@@ -47,3 +47,37 @@ class SecurityItemList(BaseModel):
     total: int
     limit: int
     offset: int
+
+
+class SecurityBucketOut(BaseModel):
+    key: str
+    count: int
+
+
+class SecurityScoreBucketOut(BaseModel):
+    bucket: str
+    min_score: float
+    max_score: float
+    count: int
+
+
+class SecuritySoftArticleOut(BaseModel):
+    item: ItemOut
+    reject_reason: str | None = None
+    soft_article_score: float
+    evidence_score: float
+    final_security_score: float
+    badges: list[str] = Field(default_factory=list)
+    why_ranked: list[str] = Field(default_factory=list)
+
+
+class SecurityStatsOut(BaseModel):
+    score_version: str
+    total_scored: int
+    accepted: int
+    rejected: int
+    accept_rate: float
+    reject_reasons: list[SecurityBucketOut] = Field(default_factory=list)
+    sections: list[SecurityBucketOut] = Field(default_factory=list)
+    score_distribution: list[SecurityScoreBucketOut] = Field(default_factory=list)
+    soft_article_top: list[SecuritySoftArticleOut] = Field(default_factory=list)

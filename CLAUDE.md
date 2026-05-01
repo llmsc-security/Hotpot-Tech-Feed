@@ -32,9 +32,12 @@ bash backup.sh                     # → backups/hotpot-<UTC-ts>.tar.gz (~2 MB)
 bash restore.sh <archive.tar.gz>   # wipes DB → pg_restore → restarts → prints /api/stats
 ```
 
-The named volumes (`hotpot_pg`, `hotpot_redis`, `hotpot_qdrant`) survive
-`docker compose down`. `down -v` would delete them — never use it without
-asking. Adding any new persistent state means extending both scripts.
+Runtime state is bind-mounted under `${HOTPOT_DATA_DIR:-./hotpot-data}`:
+Postgres in `postgres/`, Redis in `redis/`, and Qdrant in `qdrant/`. The
+directory survives `docker compose down` and can be copied with the repo for
+host migration. Never delete it without taking `bash backup.sh` first.
+Adding any new persistent state means extending both compose mounts and the
+backup/restore path.
 
 ## Layout
 
@@ -81,9 +84,9 @@ docs/                             slides.pptx generator
    carries explicit aliasing for OpenAI / DeepMind / Anthropic / Google
    Research / Meta AI / MS Research / NVIDIA / Apple / BAIR / SAIL.
 
-5. **When in doubt about volumes, run `bash backup.sh` first.** Restoring
-   from a 2 MB tarball is cheap; losing weeks of corpus + contributions is
-   not.
+5. **When in doubt about persisted data, run `bash backup.sh` first.**
+   Restoring from a small tarball is cheap; losing weeks of corpus +
+   contributions is not.
 
 6. **`backend/data/seed_sources.yaml` is baked into the backend image** and
    `seed_from_yaml()` matches existing rows by URL (not name). After editing

@@ -6,7 +6,7 @@
 # internal docker network, and exposes ONLY the gateway on the host at
 # $HOST_PORT (default 8080).
 #
-# Idempotent: re-run any time. Pre-existing data volumes are preserved.
+# Idempotent: re-run any time. Pre-existing host-mounted data is preserved.
 #
 # Run:    bash start.sh
 # Stop:   docker compose down
@@ -120,8 +120,8 @@ cat <<EOF
     docker compose logs -f gateway backend
 
   Stop everything:
-    docker compose down            # keeps data volumes
-    docker compose down -v         # also wipes Postgres + Qdrant data
+    docker compose down            # keeps ./hotpot-data
+    rm -rf ./hotpot-data           # wipes Postgres + Redis + Qdrant data
 EOF
 hr
 

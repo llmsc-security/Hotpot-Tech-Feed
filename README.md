@@ -76,7 +76,19 @@ bash start.sh
 
 When it prints **"is running"**, open `http://127.0.0.1:8080` (or whichever `HOST_PORT` you chose).
 
-Stop everything with `docker compose down`. Add `-v` to also wipe data volumes.
+Stop everything with `docker compose down`. Runtime state is stored on the
+host under `${HOTPOT_DATA_DIR:-./hotpot-data}`, so the corpus survives container
+rebuilds and can be copied to another machine. The scheduler container starts
+with the stack; no host crontab is needed.
+
+Default host data layout:
+
+```text
+hotpot-data/
+  postgres/   # canonical DB: sources, items, scores, evidence, clicks
+  redis/      # queue/cache state
+  qdrant/     # vector store, if embeddings are enabled
+```
 
 ---
 
@@ -118,29 +130,33 @@ hotpot send-test-digest --to EMAIL         # render and send today's digest end-
 
 ---
 
-## Migration: snapshot on box A, restore on box B
+## Migration: host data or backup archive
 
 For "crawl on a build box, deploy the data to the workstation" or just for backups.
+There are two supported paths:
+
+1. Stop the stack and copy `${HOTPOT_DATA_DIR:-./hotpot-data}` to the new host
+   at the same path, then run `docker compose up -d`.
+2. Use `bash backup.sh` and `bash restore.sh` for a smaller portable archive.
 
 ### On the source box (where the data lives)
 
 ```bash
-./scripts/snapshot.sh
-# → data/snapshots/hotpot-<TIMESTAMP>.tar.gz
+bash backup.sh
+# → backups/hotpot-<TIMESTAMP>.tar.gz
 ```
 
 The tarball contains:
 
 - `postgres.dump` — custom-format `pg_dump` of every table (sources, items, tags, summaries)
-- `seed_sources.yaml` — the source list at snapshot time
-- `manifest.json` — timestamp, host, item / source counts
-
-Qdrant embeddings are NOT in the snapshot (Qdrant has no host port now, and embeddings can be regenerated quickly on the target box).
+- `qdrant.tar.gz` — vector-store files when Qdrant has data
+- `env.backup` — `.env` copy when present
+- `manifest.json` — timestamp, host, compose project, data dir, tool versions
 
 ### Transfer
 
 ```bash
-scp data/snapshots/hotpot-*.tar.gz user@workstation:~/Hotpot-Tech-Feed/data/snapshots/
+scp backups/hotpot-*.tar.gz user@workstation:~/Hotpot-Tech-Feed/backups/
 ```
 
 ### On the target box
@@ -150,14 +166,15 @@ git clone https://github.com/llmsc-security/Hotpot-Tech-Feed.git
 cd Hotpot-Tech-Feed
 cp .env.example .env                                # edit secrets
 bash start.sh                                       # builds + starts the stack
-./scripts/restore.sh data/snapshots/hotpot-<TS>.tar.gz   # loads the dump
+bash restore.sh backups/hotpot-<TS>.tar.gz          # loads the dump
 ```
 
 The restore script:
 
-1. Drops and recreates the database (5-second confirmation prompt before the destructive step)
+1. Drops and recreates the database
 2. Loads the dump with `pg_restore` via `docker compose exec postgres`
-3. Prints item / source counts to verify
+3. Restores Qdrant into `${HOTPOT_DATA_DIR:-./hotpot-data}/qdrant` when present
+4. Prints live API stats to verify
 
 If you need similarity dedup, re-embed in place:
 
@@ -229,29 +246,49 @@ will batch-embed at thousands of items/second.
 
 ---
 
-## Running periodic ingest under Celery
+## Running periodic ingest in Docker
 
 The synchronous `hotpot ingest-now` command is the easiest way to verify the
-pipeline. For real periodic runs, start a worker + beat:
+pipeline. For real periodic runs, the compose-managed scheduler container runs
+with the stack:
 
 ```bash
-celery -A app.core.celery_app.celery_app worker -l info
-celery -A app.core.celery_app.celery_app beat   -l info
+docker compose up -d scheduler
+docker compose logs -f scheduler
 ```
 
-Beat schedule (in `app/core/celery_app.py`):
+The scheduler lives inside the backend image, uses the compose network
+(`postgres`, `redis`, `qdrant`), and writes logs/backups to `./logs` and
+`./backups`. No host crontab or Docker socket is required.
 
-| schedule          | task                          |
-|-------------------|-------------------------------|
-| every hour @ :15  | `ingest_kind("arxiv")`        |
-| every 15 minutes  | `ingest_kind("rss")`          |
+Scheduler jobs:
 
-For hosts that should keep crawling without Celery, install
-[`crontab.example`](./crontab.example). It uses
-[`scripts/cron_hotpot.sh`](./scripts/cron_hotpot.sh) with `flock` so repeated
-jobs do not overlap. The `ingest-html` schedule is the RSS-like path for
-ordinary HTML listing pages: `html_index` sources are polled, article URLs are
-extracted with a regex, and canonical URL dedup keeps only new items.
+| schedule       | job                    |
+|----------------|------------------------|
+| hourly @ :10   | `ingest-html`          |
+| every 2 hours  | `ingest-rss`           |
+| every 6 hours  | `ingest-arxiv`         |
+| daily @ 02:00  | `ingest-now`           |
+| every 30 min   | `ingest-empty`         |
+| hourly @ :15   | `health-check-sources` |
+| daily @ 03:00  | `score-sources`        |
+| daily @ 03:10  | `score-security`       |
+| daily @ 03:30  | `backup-db`            |
+
+The `ingest-html` job is the RSS-like path for ordinary HTML listing pages:
+`html_index` sources are polled, article URLs are extracted with a regex, and
+canonical URL dedup keeps only new items.
+
+Useful one-shot checks:
+
+```bash
+docker compose run --rm scheduler python -m app.scripts.scheduler --list
+docker compose run --rm scheduler python -m app.scripts.scheduler --once score-security
+```
+
+[`crontab.example`](./crontab.example) and
+[`scripts/cron_hotpot.sh`](./scripts/cron_hotpot.sh) remain as legacy host-cron
+fallbacks only.
 
 ---
 

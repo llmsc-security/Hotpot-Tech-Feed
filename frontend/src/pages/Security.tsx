@@ -1,8 +1,14 @@
 import { useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 
-import { bumpItemClick, listSecurityHot, listSecurityItems } from "../api";
-import type { SecurityItem, SecuritySection, SecuritySort } from "../types";
+import { bumpItemClick, getSecurityStats, listSecurityHot, listSecurityItems } from "../api";
+import type {
+  SecurityItem,
+  SecuritySection,
+  SecuritySoftArticle,
+  SecuritySort,
+  SecurityStats,
+} from "../types";
 
 const PAGE_SIZE = 25;
 
@@ -44,6 +50,11 @@ export default function Security() {
       }),
     staleTime: 60_000,
   });
+  const stats = useQuery({
+    queryKey: ["security-stats"],
+    queryFn: getSecurityStats,
+    staleTime: 60_000,
+  });
 
   const total = feed.data?.total ?? 0;
   const start = page * PAGE_SIZE + 1;
@@ -80,7 +91,11 @@ export default function Security() {
           </p>
         )}
         {hot.data && hot.data.length > 0 && (
-          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          <div
+            className="grid auto-cols-[82%] grid-flow-col gap-3 overflow-x-auto pb-1
+                       sm:auto-cols-auto sm:grid-flow-row sm:grid-cols-2 sm:overflow-visible sm:pb-0
+                       lg:grid-cols-5"
+          >
             {hot.data.map((story, index) => (
               <SecurityHotCard key={story.security.group_key} story={story} rank={index + 1} />
             ))}
@@ -193,13 +208,14 @@ export default function Security() {
           </>
         )}
       </section>
+
+      <SecurityTechCard stats={stats.data} isLoading={stats.isLoading} />
     </div>
   );
 }
 
 function SecurityHotCard({ story, rank }: { story: SecurityItem; rank: number }) {
   const { item, security } = story;
-  const excerpt = item.summary ?? item.excerpt;
   return (
     <article
       className="min-w-0 rounded-lg border border-white/10 bg-white/[0.06] p-3
@@ -218,12 +234,7 @@ function SecurityHotCard({ story, rank }: { story: SecurityItem; rank: number })
         <SecurityLink story={story} className="hover:text-brand-amber" />
       </h3>
       <BadgeList badges={security.badges} dark />
-      {excerpt && (
-        <p className="mt-2 line-clamp-3 text-xs leading-relaxed text-slate-300">
-          {excerpt}
-        </p>
-      )}
-      <WhyList reasons={security.why_ranked} dark />
+      <WhyList reasons={security.why_ranked} dark limit={2} />
     </article>
   );
 }
@@ -388,11 +399,19 @@ function BadgeList({ badges, dark = false }: { badges: string[]; dark?: boolean 
   );
 }
 
-function WhyList({ reasons, dark = false }: { reasons: string[]; dark?: boolean }) {
+function WhyList({
+  reasons,
+  dark = false,
+  limit = 4,
+}: {
+  reasons: string[];
+  dark?: boolean;
+  limit?: number;
+}) {
   if (reasons.length === 0) return null;
   return (
     <div className={`mt-3 flex flex-wrap gap-1.5 text-[11px] ${dark ? "text-slate-300" : "text-slate-500"}`}>
-      {reasons.slice(0, 4).map((reason) => (
+      {reasons.slice(0, limit).map((reason) => (
         <span key={reason} className={dark ? "text-slate-300" : "text-slate-500"}>
           {reason}
         </span>
@@ -414,6 +433,200 @@ function sectionLabel(section: SecuritySection): string {
   return SECTIONS.find((s) => s.key === section)?.label ?? section.replaceAll("_", " ");
 }
 
+function SecurityTechCard({
+  stats,
+  isLoading,
+}: {
+  stats: SecurityStats | undefined;
+  isLoading: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const maxReject = Math.max(...(stats?.reject_reasons.map((b) => b.count) ?? [1]), 1);
+  const maxScoreBucket = Math.max(...(stats?.score_distribution.map((b) => b.count) ?? [1]), 1);
+
+  return (
+    <section className="rounded-lg border border-slate-200 bg-white shadow-sm">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="flex w-full items-center justify-between gap-3 px-4 py-4 text-left sm:px-5"
+        aria-expanded={open}
+      >
+        <div className="min-w-0">
+          <p className="text-[11px] font-semibold uppercase tracking-[0.16em] text-slate-500">
+            technical diagnostics
+          </p>
+          <h2 className="font-serif text-lg font-bold text-slate-950 sm:text-xl">
+            Score, rank, filter-out dataflow
+          </h2>
+        </div>
+        <span className="shrink-0 rounded-md border border-slate-200 px-2 py-1 text-sm text-slate-600">
+          {open ? "Collapse" : "Expand"}
+        </span>
+      </button>
+
+      {open && (
+        <div className="border-t border-slate-100 px-4 pb-5 sm:px-5">
+          {isLoading && <p className="pt-4 text-sm text-slate-500">Loading diagnostics...</p>}
+          {!isLoading && !stats && (
+            <p className="pt-4 text-sm text-red-600">Security diagnostics are unavailable.</p>
+          )}
+          {stats && (
+            <div className="space-y-5 pt-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <MetricCard label="Total processed" value={stats.total_scored} />
+                <MetricCard label="Accepted" value={stats.accepted} />
+                <MetricCard label="Filtered out" value={stats.rejected} />
+                <MetricCard label="Accept rate" value={`${Math.round(stats.accept_rate * 1000) / 10}%`} />
+              </div>
+
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div>
+                  <h3 className="mb-2 text-sm font-bold text-slate-800">Filter-out reasons</h3>
+                  <div className="space-y-2">
+                    {stats.reject_reasons.map((bucket) => (
+                      <BarRow
+                        key={bucket.key}
+                        label={reasonLabel(bucket.key)}
+                        count={bucket.count}
+                        max={maxReject}
+                        tone="red"
+                      />
+                    ))}
+                  </div>
+                </div>
+
+                <div>
+                  <h3 className="mb-2 text-sm font-bold text-slate-800">Final score distribution</h3>
+                  <div className="space-y-2">
+                    {stats.score_distribution.map((bucket) => (
+                      <BarRow
+                        key={bucket.bucket}
+                        label={bucket.bucket}
+                        count={bucket.count}
+                        max={maxScoreBucket}
+                        tone="slate"
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-slate-800">Accepted section mix</h3>
+                <div className="flex flex-wrap gap-2">
+                  {stats.sections.map((bucket) => (
+                    <span
+                      key={bucket.key}
+                      className="rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-xs text-slate-700"
+                    >
+                      {sectionLabel(bucket.key as SecuritySection)} · {bucket.count}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <h3 className="mb-2 text-sm font-bold text-slate-800">软文过滤高分样本</h3>
+                <div className="grid gap-2">
+                  {stats.soft_article_top.slice(0, 8).map((entry) => (
+                    <SoftArticleRow key={entry.item.id} entry={entry} />
+                  ))}
+                </div>
+              </div>
+
+              <p className="text-xs text-slate-500">
+                Score version {stats.score_version}. Pagination and hot ranking use the persisted
+                security score projection, not generic Item.score.
+              </p>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function MetricCard({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+      <p className="text-[11px] uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="mt-1 text-2xl font-bold tabular-nums text-slate-950">
+        {typeof value === "number" ? value.toLocaleString() : value}
+      </p>
+    </div>
+  );
+}
+
+function BarRow({
+  label,
+  count,
+  max,
+  tone,
+}: {
+  label: string;
+  count: number;
+  max: number;
+  tone: "red" | "slate";
+}) {
+  const pct = Math.max(3, Math.round((count / max) * 100));
+  return (
+    <div>
+      <div className="mb-1 flex items-center justify-between gap-2 text-xs">
+        <span className="truncate text-slate-600">{label}</span>
+        <span className="tabular-nums text-slate-500">{count.toLocaleString()}</span>
+      </div>
+      <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+        <div
+          className={`h-full rounded-full ${tone === "red" ? "bg-red-500" : "bg-slate-500"}`}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
+  );
+}
+
+function SoftArticleRow({ entry }: { entry: SecuritySoftArticle }) {
+  return (
+    <article className="rounded-lg border border-slate-200 px-3 py-3">
+      <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-500">
+        <span className="rounded bg-red-50 px-2 py-0.5 font-semibold text-red-700">
+          软文 {score(entry.soft_article_score)}
+        </span>
+        <span>evidence {score(entry.evidence_score)}</span>
+        <span>final {score(entry.final_security_score)}</span>
+        {entry.reject_reason && <span>{reasonLabel(entry.reject_reason)}</span>}
+      </div>
+      <h4 className="mt-1 line-clamp-2 text-sm font-semibold text-slate-900">
+        <a
+          href={entry.item.canonical_url}
+          target="_blank"
+          rel="noreferrer"
+          className="hover:text-brand"
+          onClick={() => bumpItemClick(entry.item.id)}
+        >
+          {entry.item.title}
+        </a>
+      </h4>
+      <div className="mt-2 flex flex-wrap gap-1.5">
+        {entry.badges.slice(0, 4).map((badge) => (
+          <span
+            key={badge}
+            className="rounded border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-600"
+          >
+            {badge}
+          </span>
+        ))}
+      </div>
+    </article>
+  );
+}
+
+function reasonLabel(reason: string): string {
+  if (reason === "soft_article") return "软文/营销过滤";
+  return reason.replaceAll("_", " ");
+}
+
 function sourceTitle(story: SecurityItem): string {
   if (story.sources.length === 0) return "Source: unknown";
   return `Sources: ${story.sources.join(", ")}`;
@@ -429,7 +642,7 @@ function scoreEvidence(story: SecurityItem, kind: "final" | "evidence" | "exploi
     return [
       `Final ${score(security.final_security_score)} = weighted security score.`,
       `Evidence ${score(security.evidence_score)}, exploit ${score(security.exploitation_score)}, quality ${score(security.content_quality_score)}, impact ${score(security.impact_score)}, action ${score(security.actionability_score)}.`,
-      `Soft-article penalty ${score(security.soft_article_score)}.`,
+      `软文惩罚 ${score(security.soft_article_score)}.`,
       `Why: ${reasons}.`,
     ].join(" ");
   }

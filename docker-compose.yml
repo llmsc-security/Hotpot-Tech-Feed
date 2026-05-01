@@ -10,11 +10,10 @@
 #   docker compose up -d --build              # builds backend + gateway, starts everything
 #   docker compose run --rm backend hotpot ingest-now   # one-shot CLI commands
 #   docker compose logs -f gateway backend    # tail logs
-#   docker compose down                       # stop (data volumes persist)
+#   docker compose down                       # stop (host data dir persists)
 
-# Lock the compose project name so docker-volume names stay stable regardless
-# of what folder the repo is cloned into. backup.sh / restore.sh rely on the
-# `hotpot-tech-feed_hotpot_*` volume prefix.
+# Lock the compose project name so container names stay stable regardless of
+# what folder the repo is cloned into.
 name: hotpot-tech-feed
 
 services:
@@ -116,6 +115,75 @@ services:
     profiles:
       - worker
 
+  # ----- Docker-native scheduler -----
+  # Replaces host crontab and runs by default with the stack.
+  scheduler:
+    image: hotpot-backend
+    container_name: hotpot-scheduler
+    command: ["python", "-m", "app.scripts.scheduler"]
+    environment:
+      ENV: ${ENV:-prod}
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: ${POSTGRES_DB:-hotpot}
+      POSTGRES_USER: ${POSTGRES_USER:-hotpot}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
+      REDIS_URL: redis://redis:6379/0
+      QDRANT_URL: http://qdrant:6333
+      QDRANT_COLLECTION: ${QDRANT_COLLECTION:-hotpot_items}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.ai2wj.com/v1}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-replace_me}
+      LLM_MODEL_TAGGER: ${LLM_MODEL_TAGGER:-Qwen/Qwen3.5-397B-A17B}
+      LLM_MODEL_SUMMARY: ${LLM_MODEL_SUMMARY:-Qwen/Qwen3.5-397B-A17B}
+      LLM_MODEL_COMMENTARY: ${LLM_MODEL_COMMENTARY:-Qwen/Qwen3.5-397B-A17B}
+      EMBEDDINGS_ENABLED: ${EMBEDDINGS_ENABLED:-false}
+      EMBEDDINGS_MODEL: ${EMBEDDINGS_MODEL:-BAAI/bge-m3}
+      EMBEDDINGS_DIM: ${EMBEDDINGS_DIM:-1024}
+      SMTP_HOST: ${SMTP_HOST:-smtp.resend.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USE_TLS: ${SMTP_USE_TLS:-true}
+      SMTP_USERNAME: ${SMTP_USERNAME:-resend}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-re_replace_me}
+      DIGEST_FROM_EMAIL: ${DIGEST_FROM_EMAIL:-digest@ai2wj.com}
+      DIGEST_FROM_NAME: ${DIGEST_FROM_NAME:-Hotpot Tech Feed}
+      DIGEST_REPLY_TO: ${DIGEST_REPLY_TO:-noreply@ai2wj.com}
+      USER_AGENT: ${USER_AGENT:-HotpotTechFeed/0.1 (+https://feed.ai2wj.com)}
+      DEDUP_TITLE_THRESHOLD: ${DEDUP_TITLE_THRESHOLD:-0.90}
+      DEDUP_EMBEDDING_THRESHOLD: ${DEDUP_EMBEDDING_THRESHOLD:-0.92}
+      DEDUP_WINDOW_DAYS: ${DEDUP_WINDOW_DAYS:-7}
+      ENRICH_SUMMARY: ${ENRICH_SUMMARY:-true}
+      ENRICH_COMMENTARY: ${ENRICH_COMMENTARY:-false}
+      PUBLIC_ORIGIN: ${PUBLIC_ORIGIN:-http://localhost:8080}
+      GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+      RSSHUB_URL: ${RSSHUB_URL:-}
+      DISCOVERY_FOCUS: ${DISCOVERY_FOCUS:-llm,academic}
+      DISCOVERY_LANGUAGES: ${DISCOVERY_LANGUAGES:-en,zh}
+      DISCOVERY_SEED_PATH: ${DISCOVERY_SEED_PATH:-data/seed_candidates.yaml}
+      HOTPOT_SCHEDULER_TZ: ${HOTPOT_SCHEDULER_TZ:-UTC}
+      HOTPOT_SCHEDULER_LOG_DIR: /app/logs
+      HOTPOT_BACKUP_DIR: /app/backups
+      WORKERS: ${SCHEDULER_WORKERS:-4}
+      FULL_WORKERS: ${SCHEDULER_FULL_WORKERS:-8}
+      SOURCE_WORKERS: ${SCHEDULER_SOURCE_WORKERS:-1}
+      SECURITY_LIMIT: ${SECURITY_LIMIT:-5000}
+      SECURITY_RECENT_DAYS: ${SECURITY_RECENT_DAYS:-120}
+    volumes:
+      - ./logs:/app/logs
+      - ./backups:/app/backups
+    depends_on:
+      backend:
+        condition: service_started
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      qdrant:
+        condition: service_started
+    restart: unless-stopped
+    networks:
+      - internal
+
   # ----- Internal data services — NO host port mappings -----
   postgres:
     image: postgres:16-alpine
@@ -125,7 +193,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-hotpot}
       POSTGRES_DB: ${POSTGRES_DB:-hotpot}
     volumes:
-      - hotpot_pg:/var/lib/postgresql/data
+      - ${HOTPOT_DATA_DIR:-./hotpot-data}/postgres:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-hotpot}"]
       interval: 5s
@@ -139,7 +207,7 @@ services:
     image: redis:7-alpine
     container_name: hotpot-redis
     volumes:
-      - hotpot_redis:/data
+      - ${HOTPOT_DATA_DIR:-./hotpot-data}/redis:/data
     restart: unless-stopped
     networks:
       - internal
@@ -148,7 +216,7 @@ services:
     image: qdrant/qdrant:v1.9.2
     container_name: hotpot-qdrant
     volumes:
-      - hotpot_qdrant:/qdrant/storage
+      - ${HOTPOT_DATA_DIR:-./hotpot-data}/qdrant:/qdrant/storage
     restart: unless-stopped
     networks:
       - internal
@@ -174,11 +242,6 @@ services:
       - internal
     profiles:
       - discovery
-
-volumes:
-  hotpot_pg:
-  hotpot_redis:
-  hotpot_qdrant:
 
 networks:
   internal:

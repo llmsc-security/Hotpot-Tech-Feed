@@ -13,7 +13,7 @@ WORKDIR /app
 
 # Build deps for psycopg2; trimmed image afterwards.
 RUN apt-get update \
- && apt-get install -y --no-install-recommends libpq-dev gcc curl \
+ && apt-get install -y --no-install-recommends libpq-dev postgresql-client gcc curl \
  && rm -rf /var/lib/apt/lists/*
 
 # Install Python deps first to maximize layer cache.

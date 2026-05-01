@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
@@ -69,7 +69,7 @@ function HeaderRight({
   const formatted = count == null ? "…" : count.toLocaleString();
 
   return (
-    <div className="flex w-full flex-wrap items-center justify-end gap-2 md:w-auto md:gap-3">
+    <div className="flex w-full flex-wrap items-center justify-between gap-2 md:w-auto md:justify-end md:gap-3">
       <nav className="hidden items-center gap-1 rounded-full bg-white/10 p-1 text-xs font-medium sm:flex">
         <NavLink
           to="/"
@@ -120,16 +120,57 @@ function HeaderRight({
         <span className="text-slate-200 max-[420px]:hidden">corpus</span>
         <span className="font-semibold text-white">{formatted}</span>
       </button>
+      <GithubLinkWithTip />
+    </div>
+  );
+}
+
+function GithubLinkWithTip() {
+  const [showTip, setShowTip] = useState(false);
+  const timerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    };
+  }, []);
+
+  function revealTip() {
+    setShowTip(true);
+    if (timerRef.current !== null) window.clearTimeout(timerRef.current);
+    timerRef.current = window.setTimeout(() => {
+      setShowTip(false);
+      timerRef.current = null;
+    }, 6000);
+  }
+
+  return (
+    <div
+      className="relative shrink-0"
+      onMouseEnter={revealTip}
+      onFocus={revealTip}
+      onTouchStart={revealTip}
+    >
       <a
         href={REPO_URL}
         target="_blank"
         rel="noopener noreferrer"
         className="text-slate-200 hover:text-white transition-colors"
-        aria-label="View on GitHub"
+        aria-label="View ranking and scoring algorithm notes on GitHub"
         title="View on GitHub"
       >
         <GithubIcon className="w-6 h-6" />
       </a>
+      {showTip && (
+        <div
+          className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 max-w-[calc(100vw-1rem)]
+                     rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-left
+                     text-[11px] leading-relaxed text-white shadow-xl"
+          role="tooltip"
+        >
+          About rank and score algorithm: see it here.
+        </div>
+      )}
     </div>
   );
 }
@@ -146,7 +187,7 @@ export default function App() {
         <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
           <Link to="/" className="flex min-w-0 items-center gap-3 hover:opacity-90">
             <span className="shrink-0 text-2xl">🌶️</span>
-            <span className="min-w-0 truncate font-serif text-xl font-bold sm:text-2xl">
+            <span className="min-w-0 truncate font-serif text-lg font-bold sm:text-2xl">
               Hotpot Tech Feed
             </span>
           </Link>

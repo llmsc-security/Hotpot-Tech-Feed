@@ -1,4 +1,7 @@
-# Hotpot Tech Feed — host crontab.
+# Hotpot Tech Feed — legacy host crontab fallback.
+#
+# Preferred path:
+#   docker compose up -d scheduler
 #
 # Install on the host that runs the docker stack:
 #   crontab -e

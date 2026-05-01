@@ -37,6 +37,11 @@ read_env() {
 }
 PGUSER="$(read_env POSTGRES_USER)"; PGUSER="${PGUSER:-hotpot}"
 PGDB="$(read_env POSTGRES_DB)";     PGDB="${PGDB:-hotpot}"
+DATA_DIR="$(read_env HOTPOT_DATA_DIR)"; DATA_DIR="${DATA_DIR:-./hotpot-data}"
+if [[ "$DATA_DIR" != /* ]]; then
+    DATA_DIR="$ROOT/$DATA_DIR"
+fi
+QDRANT_DATA_DIR="$DATA_DIR/qdrant"
 
 if ! docker compose ps postgres --format '{{.State}}' 2>/dev/null | grep -q running; then
     err "hotpot-postgres is not running. Start the stack first: bash start.sh"
@@ -48,16 +53,20 @@ docker compose exec -T postgres \
     pg_dump -U "$PGUSER" -d "$PGDB" -Fc --no-owner --no-acl \
     > "$WORK/postgres.dump"
 
-# Qdrant: only worth grabbing if it actually has data.
-if docker volume inspect hotpot-tech-feed_hotpot_qdrant >/dev/null 2>&1; then
-    log "Snapshotting Qdrant volume → qdrant.tar.gz"
+# Qdrant: only worth grabbing if it actually has data. Prefer the host bind
+# mount; keep the old Docker volume path as a compatibility fallback.
+if [ -d "$QDRANT_DATA_DIR" ] && [ -n "$(find "$QDRANT_DATA_DIR" -mindepth 1 -print -quit 2>/dev/null)" ]; then
+    log "Snapshotting Qdrant host data → qdrant.tar.gz"
+    tar -czf "$WORK/qdrant.tar.gz" -C "$QDRANT_DATA_DIR" .
+elif docker volume inspect hotpot-tech-feed_hotpot_qdrant >/dev/null 2>&1; then
+    log "Snapshotting legacy Qdrant volume → qdrant.tar.gz"
     docker run --rm \
         -v hotpot-tech-feed_hotpot_qdrant:/data:ro \
         -v "$WORK":/out \
         alpine:3.19 \
         sh -c "cd /data && tar -czf /out/qdrant.tar.gz ."
 else
-    warn "Qdrant volume not found — skipping (fine if EMBEDDINGS_ENABLED=false)."
+    warn "Qdrant data not found — skipping (fine if EMBEDDINGS_ENABLED=false)."
 fi
 
 # Also stash a copy of .env so the new machine has the same secrets.
@@ -73,6 +82,7 @@ cat > "$WORK/manifest.json" <<EOF
   "compose_project": "hotpot-tech-feed",
   "postgres_user":   "$PGUSER",
   "postgres_db":     "$PGDB",
+  "data_dir":        "$DATA_DIR",
   "tool_versions": {
     "docker":  "$(docker --version | awk '{print $3}' | sed 's/,$//')",
     "compose": "$(docker compose version --short)"
@@ -92,5 +102,5 @@ echo "To restore on another PC:"
 echo "  1) clone the repo and copy this archive there"
 echo "     (any folder name works — compose project name is locked to hotpot-tech-feed)"
 echo "  2) bash start.sh        (creates an empty stack; uses local .env if present)"
-echo "  3) bash restore.sh $(basename "$ARCHIVE")"
+echo "  3) bash restore.sh backups/$(basename "$ARCHIVE")"
 echo "     (also auto-recovers .env from the archive if you don't have one locally)"

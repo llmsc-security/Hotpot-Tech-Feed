@@ -104,3 +104,37 @@ export interface SecurityItemList {
   limit: number;
   offset: number;
 }
+
+export interface SecurityBucket {
+  key: string;
+  count: number;
+}
+
+export interface SecurityScoreBucket {
+  bucket: string;
+  min_score: number;
+  max_score: number;
+  count: number;
+}
+
+export interface SecuritySoftArticle {
+  item: Item;
+  reject_reason: string | null;
+  soft_article_score: number;
+  evidence_score: number;
+  final_security_score: number;
+  badges: string[];
+  why_ranked: string[];
+}
+
+export interface SecurityStats {
+  score_version: string;
+  total_scored: number;
+  accepted: number;
+  rejected: number;
+  accept_rate: number;
+  reject_reasons: SecurityBucket[];
+  sections: SecurityBucket[];
+  score_distribution: SecurityScoreBucket[];
+  soft_article_top: SecuritySoftArticle[];
+}

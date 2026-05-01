@@ -220,5 +220,11 @@ __marimo__/
 # User data backups (contain DB dumps)
 backups/
 
+# Host-mounted runtime data (Postgres, Redis, Qdrant)
+hotpot-data/
+
+# Generated slide preview exports
+docs/*_standalone_.html
+
 # Host cron logs and lock files
 logs/
