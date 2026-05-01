@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from app.adapters.base import BaseAdapter
 from app.adapters.arxiv import ArxivAdapter
+from app.adapters.html import HtmlSitemapAdapter
 from app.adapters.rss import RssAdapter
 from app.models.source import Source, SourceKind
 
@@ -15,6 +16,7 @@ from app.models.source import Source, SourceKind
 ADAPTERS: dict[SourceKind, type[BaseAdapter]] = {
     SourceKind.arxiv: ArxivAdapter,
     SourceKind.rss: RssAdapter,
+    SourceKind.html: HtmlSitemapAdapter,
 }
 
 
