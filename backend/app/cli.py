@@ -7,6 +7,7 @@
   hotpot ingest-deep [--passes N]        Run N full ingest passes with sleeps.
   hotpot enrich-all [--limit N]          Backfill summaries and quality scores.
   hotpot enrich-all --quality-only       Backfill ranking quality scores only.
+  hotpot score-security                  Backfill the /security score projection.
   hotpot list-sources                    Print every source row.
   hotpot send-test-digest --to EMAIL     Render today's digest and send it.
   hotpot preview-digest [--out PATH]     Write the rendered digest HTML to a file.
@@ -23,6 +24,7 @@ from sqlalchemy import or_, select
 from app.core.db import session_scope
 from app.core.logging import configure_logging, get_logger
 from app.models.source import Source, SourceKind, SourceStatus
+from app.services.contribute import USER_SOURCE_URL
 from app.tasks.ingest import ingest_all_sync, ingest_source
 
 configure_logging()
@@ -79,6 +81,7 @@ def ingest_kind_cmd(kind: str, workers: int | None) -> None:
             select(Source)
             .where(Source.kind == SourceKind(kind))
             .where(Source.status != SourceStatus.paused)
+            .where(Source.url != USER_SOURCE_URL)
             .order_by(Source.name)
         ).scalars().all()
         for source in sources:
@@ -348,6 +351,35 @@ def score_sources_cmd() -> None:
     from app.services.discovery import score_sources
     with session_scope() as db:
         click.echo(json.dumps(score_sources(db), indent=2))
+
+
+@cli.command("score-security")
+@click.option("--limit", default=1000, show_default=True, type=click.IntRange(1),
+              help="Max canonical items to score. Ignored with --all.")
+@click.option("--all", "all_items", is_flag=True,
+              help="Score every canonical item.")
+@click.option("--missing-only", is_flag=True,
+              help="Only score items that do not yet have a security score row.")
+@click.option("--recent-days", type=click.IntRange(1), default=None,
+              help="Only score items published or fetched within this many days.")
+def score_security_cmd(
+    limit: int,
+    all_items: bool,
+    missing_only: bool,
+    recent_days: int | None,
+) -> None:
+    """Recompute the dedicated /security filtering and ranking projection."""
+    from app.services.security_scoring import score_security_items
+    with session_scope() as db:
+        click.echo(json.dumps(
+            score_security_items(
+                db,
+                limit=None if all_items else limit,
+                missing_only=missing_only,
+                recent_days=recent_days,
+            ),
+            indent=2,
+        ))
 
 
 @cli.command("health-check-sources")

@@ -25,9 +25,18 @@ from app.models.source import HealthStatus, Source, SourceKind, SourceStatus
 from app.schemas.item import RawItem
 from app.services import dedup
 from app.services.canonicalize import canonicalize_url
+from app.services.contribute import USER_SOURCE_URL
 from app.tasks.enrich import enrich_item
 
 log = get_logger(__name__)
+
+
+def _is_crawlable_source(source: Source | None) -> bool:
+    return bool(
+        source
+        and source.status != SourceStatus.paused
+        and source.url != USER_SOURCE_URL
+    )
 
 
 def _enrich_one(item_id: uuid.UUID) -> bool:
@@ -174,7 +183,7 @@ def _known_exposure_sources(target: Item) -> list[str]:
 def ingest_source_id(source_id: str) -> dict:
     with session_scope() as db:
         source = db.get(Source, uuid.UUID(source_id))
-        if not source or source.status == SourceStatus.paused:
+        if not _is_crawlable_source(source):
             return {"skipped": True}
         return ingest_source(db, source)
 
@@ -188,6 +197,7 @@ def ingest_kind(kind: str) -> dict:
             select(Source).where(
                 Source.kind == SourceKind(kind),
                 Source.status != SourceStatus.paused,
+                Source.url != USER_SOURCE_URL,
             )
         ).scalars().all()
         for s in sources:
@@ -202,7 +212,7 @@ def _ingest_one_source_id(source_id: uuid.UUID, workers: int) -> dict:
     """Run a full ingest for one source in its own session. Thread-safe."""
     with session_scope() as db:
         source = db.get(Source, source_id)
-        if not source or source.status == SourceStatus.paused:
+        if not _is_crawlable_source(source):
             return {"fetched": 0, "new": 0, "dup": 0, "errors": 0}
         log.info("ingesting", source=source.name, kind=source.kind.value)
         return ingest_source(db, source, workers=workers)
@@ -225,7 +235,10 @@ def ingest_all_sync(workers: int | None = None, source_workers: int | None = Non
     with session_scope() as db:
         source_ids = [
             sid for (sid,) in db.execute(
-                select(Source.id).where(Source.status != SourceStatus.paused)
+                select(Source.id).where(
+                    Source.status != SourceStatus.paused,
+                    Source.url != USER_SOURCE_URL,
+                )
             ).all()
         ]
 

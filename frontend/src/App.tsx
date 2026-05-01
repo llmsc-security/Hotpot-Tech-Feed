@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, Outlet } from "react-router-dom";
+import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
@@ -69,24 +69,47 @@ function HeaderRight({
   const formatted = count == null ? "…" : count.toLocaleString();
 
   return (
-    <div className="flex items-center gap-3">
+    <div className="flex w-full flex-wrap items-center justify-end gap-2 md:w-auto md:gap-3">
+      <nav className="hidden items-center gap-1 rounded-full bg-white/10 p-1 text-xs font-medium sm:flex">
+        <NavLink
+          to="/"
+          className={({ isActive }) =>
+            `rounded-full px-3 py-1.5 transition-colors ${
+              isActive ? "bg-white text-brand-dark" : "text-slate-200 hover:bg-white/10 hover:text-white"
+            }`
+          }
+          end
+        >
+          Feed
+        </NavLink>
+        <NavLink
+          to="/security"
+          className={({ isActive }) =>
+            `rounded-full px-3 py-1.5 transition-colors ${
+              isActive ? "bg-white text-brand-dark" : "text-slate-200 hover:bg-white/10 hover:text-white"
+            }`
+          }
+        >
+          Security
+        </NavLink>
+      </nav>
       <button
         type="button"
         onClick={onShowCommunity}
         className="inline-flex items-center gap-1.5 rounded-full
                    bg-brand-amber/95 hover:bg-brand-amber text-brand-dark
-                   px-3 py-1.5 text-xs font-semibold transition-colors shadow-sm"
+                   px-2.5 py-1.5 text-xs font-semibold transition-colors shadow-sm sm:px-3"
         title="Share a URL or browse community contributions ranked by clicks"
       >
         <span aria-hidden="true">🔥＋</span>
-        <span>Community</span>
+        <span className="max-[420px]:hidden">Community</span>
       </button>
       <button
         type="button"
         onClick={onShowSources}
-        className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/10
+        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/10
                    border border-white/15 text-sm tabular-nums hover:bg-white/15
-                   hover:border-white/25 transition-colors"
+                   hover:border-white/25 transition-colors sm:gap-2 sm:px-3"
         title={
           data
             ? `${data.items.toLocaleString()} items across ${data.sources.toLocaleString()} sources — click to browse`
@@ -94,7 +117,7 @@ function HeaderRight({
         }
       >
         <CorpusIcon className="w-4 h-4 text-brand-amber" />
-        <span className="text-slate-200">corpus</span>
+        <span className="text-slate-200 max-[420px]:hidden">corpus</span>
         <span className="font-semibold text-white">{formatted}</span>
       </button>
       <a
@@ -114,23 +137,56 @@ function HeaderRight({
 export default function App() {
   const [showSources, setShowSources] = useState(false);
   const [showCommunity, setShowCommunity] = useState(false);
+  const location = useLocation();
+  const isSecurity = location.pathname.startsWith("/security");
 
   return (
     <div className="min-h-screen flex flex-col">
       <header className="bg-brand-dark text-white">
-        <div className="max-w-5xl mx-auto px-6 py-5 flex items-center justify-between gap-4">
-          <Link to="/" className="flex items-center gap-3 hover:opacity-90">
-            <span className="text-2xl">🌶️</span>
-            <span className="font-serif text-2xl font-bold">Hotpot Tech Feed</span>
+        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
+          <Link to="/" className="flex min-w-0 items-center gap-3 hover:opacity-90">
+            <span className="shrink-0 text-2xl">🌶️</span>
+            <span className="min-w-0 truncate font-serif text-xl font-bold sm:text-2xl">
+              Hotpot Tech Feed
+            </span>
           </Link>
           <HeaderRight
             onShowCommunity={() => setShowCommunity(true)}
             onShowSources={() => setShowSources(true)}
           />
         </div>
+        <nav className="border-t border-white/10 px-4 py-2 sm:hidden">
+          <div className="mx-auto flex max-w-5xl gap-2 text-sm font-medium">
+            <NavLink
+              to="/"
+              end
+              className={({ isActive }) =>
+                `rounded-md px-3 py-1.5 ${
+                  isActive ? "bg-white text-brand-dark" : "text-slate-200"
+                }`
+              }
+            >
+              Feed
+            </NavLink>
+            <NavLink
+              to="/security"
+              className={({ isActive }) =>
+                `rounded-md px-3 py-1.5 ${
+                  isActive ? "bg-white text-brand-dark" : "text-slate-200"
+                }`
+              }
+            >
+              Security
+            </NavLink>
+          </div>
+        </nav>
       </header>
 
-      <main className="flex-1 max-w-5xl mx-auto w-full px-6 py-8">
+      <main
+        className={`flex-1 mx-auto w-full px-4 py-6 sm:px-6 sm:py-8 ${
+          isSecurity ? "max-w-7xl" : "max-w-5xl"
+        }`}
+      >
         <Outlet />
       </main>
 

@@ -219,3 +219,6 @@ __marimo__/
 
 # User data backups (contain DB dumps)
 backups/
+
+# Host cron logs and lock files
+logs/

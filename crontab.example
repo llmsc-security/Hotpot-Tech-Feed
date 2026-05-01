@@ -39,5 +39,8 @@ PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 # Daily 03:00 UTC: re-score sources from click data + LLM noise sample.
 0 3 * * *    $ROOT/scripts/cron_hotpot.sh score-sources >> $LOG/score.log 2>&1
 
+# Daily 03:10 UTC: refresh the dedicated /security score projection.
+10 3 * * *   $ROOT/scripts/cron_hotpot.sh score-security >> $LOG/score-security.log 2>&1
+
 # Daily 03:30 UTC: snapshot the DB to backups/ (cheap, ~2 MB).
 30 3 * * *   $ROOT/scripts/cron_hotpot.sh backup >> $LOG/backup.log 2>&1

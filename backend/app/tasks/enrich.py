@@ -16,6 +16,7 @@ from app.services.llm import commentary as llm_commentary
 from app.services.llm import score_item_quality
 from app.services.llm import summarize as llm_summarize
 from app.services.llm import tag_item
+from app.services.security_scoring import upsert_security_score
 
 log = get_logger(__name__)
 
@@ -65,6 +66,11 @@ def enrich_item(db: Session, item: Item) -> None:
             source_name=item.source.name if item.source else None,
             source_trust=item.source.trust_score if item.source else None,
         )
+
+    try:
+        upsert_security_score(db, item)
+    except Exception as e:  # pragma: no cover
+        log.warning("security score upsert failed", item_id=str(item.id), err=str(e))
 
     # ---- Embeddings + Qdrant ----
     if embeddings.is_enabled():

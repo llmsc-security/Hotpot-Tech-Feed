@@ -1,4 +1,12 @@
-import type { ContentType, HotItem, ItemList } from "./types";
+import type {
+  ContentType,
+  HotItem,
+  ItemList,
+  SecurityItem,
+  SecurityItemList,
+  SecuritySection,
+  SecuritySort,
+} from "./types";
 
 // In dev, Vite proxies /api/* → http://localhost:8000.
 // In prod, set VITE_API_BASE to an absolute URL (e.g. https://feed.ai2wj.com).
@@ -46,6 +54,34 @@ export async function listHotItems(
   qs.set("window_days", String(opts.windowDays ?? 14));
   const resp = await fetch(`${BASE}/items/hot?${qs}`);
   if (!resp.ok) throw new Error(`hot items fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function listSecurityHot(
+  opts: { limit?: number } = {},
+): Promise<SecurityItem[]> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(opts.limit ?? 10));
+  const resp = await fetch(`${BASE}/security/hot?${qs}`);
+  if (!resp.ok) throw new Error(`security hot fetch failed: ${resp.status}`);
+  return resp.json();
+}
+
+export async function listSecurityItems(
+  opts: {
+    limit?: number;
+    offset?: number;
+    section?: SecuritySection;
+    sort?: SecuritySort;
+  } = {},
+): Promise<SecurityItemList> {
+  const qs = new URLSearchParams();
+  qs.set("limit", String(opts.limit ?? 25));
+  qs.set("offset", String(opts.offset ?? 0));
+  qs.set("section", opts.section ?? "all");
+  qs.set("sort", opts.sort ?? "score_desc");
+  const resp = await fetch(`${BASE}/security/items?${qs}`);
+  if (!resp.ok) throw new Error(`security items fetch failed: ${resp.status}`);
   return resp.json();
 }
 

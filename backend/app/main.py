@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.routes import contribute, discovery, health, items, sources
+from app.api.routes import contribute, discovery, health, items, security, sources
 from app.core.config import settings
 from app.core.logging import configure_logging
 
@@ -25,6 +25,7 @@ app.add_middleware(
 
 app.include_router(health.router)
 app.include_router(items.router)
+app.include_router(security.router)
 app.include_router(sources.router)
 app.include_router(contribute.router)
 app.include_router(discovery.router)

@@ -7,6 +7,8 @@
 # Environment knobs:
 #   WORKERS=4          per-item LLM workers for ingest jobs
 #   SOURCE_WORKERS=1   source-level workers for ingest-now
+#   SECURITY_LIMIT=5000       max items for score-security
+#   SECURITY_RECENT_DAYS=120  recent window for score-security
 
 set -euo pipefail
 
@@ -15,11 +17,31 @@ JOB="${1:-ingest-now}"
 LOG_DIR="${LOG_DIR:-$ROOT/logs}"
 WORKERS="${WORKERS:-4}"
 SOURCE_WORKERS="${SOURCE_WORKERS:-1}"
+SECURITY_LIMIT="${SECURITY_LIMIT:-5000}"
+SECURITY_RECENT_DAYS="${SECURITY_RECENT_DAYS:-120}"
 
 mkdir -p "$LOG_DIR"
 cd "$ROOT"
 
-LOCK="$LOG_DIR/${JOB}.lock"
+INGEST_JOB=0
+case "$JOB" in
+    ingest-now|ingest-html|ingest-rss|ingest-arxiv|ingest-empty)
+        INGEST_JOB=1
+        ;;
+esac
+
+if [[ "$INGEST_JOB" == "1" ]]; then
+    # Keep compatibility with older running wrappers that held ingest-now.lock.
+    exec 8>"$LOG_DIR/ingest-now.lock"
+    if ! flock -n 8; then
+        printf '[%s] skipped %s: previous ingest run still active\n' "$(date -Is)" "$JOB"
+        exit 0
+    fi
+    LOCK="$LOG_DIR/ingest.lock"
+else
+    LOCK="$LOG_DIR/${JOB}.lock"
+fi
+
 exec 9>"$LOCK"
 if ! flock -n 9; then
     printf '[%s] skipped %s: previous run still active\n' "$(date -Is)" "$JOB"
@@ -51,6 +73,11 @@ case "$JOB" in
         ;;
     score-sources)
         docker compose run --rm backend hotpot score-sources
+        ;;
+    score-security)
+        docker compose run --rm backend hotpot score-security \
+            --limit "$SECURITY_LIMIT" \
+            --recent-days "$SECURITY_RECENT_DAYS"
         ;;
     backup)
         bash backup.sh
