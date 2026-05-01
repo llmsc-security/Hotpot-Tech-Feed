@@ -4,12 +4,12 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Hotpot palette — keep in sync with the deck.
+        // Hotpot Direction G palette.
         brand: {
-          DEFAULT: "#C4302B",
-          dark: "#1A1F3A",
-          amber: "#F4A261",
-          tint: "#FBE7E5",
+          DEFAULT: "#C8442C",
+          dark: "#1A1410",
+          amber: "#B8860B",
+          tint: "#FCE9E2",
         },
       },
       fontFamily: {

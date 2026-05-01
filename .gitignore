@@ -223,6 +223,12 @@ backups/
 # Host-mounted runtime data (Postgres, Redis, Qdrant)
 hotpot-data/
 
+# Frontend dependencies
+frontend/node_modules/
+frontend/*.tsbuildinfo
+frontend/vite.config.js
+frontend/vite.config.d.ts
+
 # Generated slide preview exports
 docs/*_standalone_.html
 

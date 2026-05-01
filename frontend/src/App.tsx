@@ -1,54 +1,39 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, NavLink, Outlet, useLocation } from "react-router-dom";
+import { Link, NavLink, Outlet, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 
 import { getStats } from "./api";
 import CommunityModal from "./components/CommunityModal";
 import ConsentBanner from "./components/ConsentBanner";
+import {
+  BellIcon,
+  BookmarkIcon,
+  DatabaseIcon,
+  FlameIcon,
+  GithubIcon,
+  PlusIcon,
+  SearchIcon,
+  SettingsIcon,
+  ShieldIcon,
+  SparklesIcon,
+} from "./components/HotpotIcons";
 import SourcesDrawer from "./components/SourcesDrawer";
 
 const REPO_URL = "https://github.com/llmsc-security/Hotpot-Tech-Feed";
+const SIDEBAR_TOPICS: [string, string, boolean][] = [
+  ["LLM agents", "12", true],
+  ["RAG", "6", true],
+  ["Security", "hot", false],
+  ["Robotics", "2", false],
+  ["Compilers", "0", false],
+];
 
-function GithubIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      fill="currentColor"
-    >
-      <path
-        fillRule="evenodd"
-        clipRule="evenodd"
-        d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.218.682-.483
-          0-.237-.009-.868-.014-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608
-          1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.339-2.221-.253-4.555-1.113-4.555-4.951
-          0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337
-          1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.203 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688
-          0 3.847-2.337 4.695-4.566 4.943.359.31.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747
-          0 .268.18.58.688.482A10.02 10.02 0 0022 12.017C22 6.484 17.522 2 12 2z"
-      />
-    </svg>
-  );
+function focusAsk() {
+  window.dispatchEvent(new Event("hotpot:focus-ask"));
 }
 
-function CorpusIcon({ className = "" }: { className?: string }) {
-  return (
-    <svg
-      viewBox="0 0 24 24"
-      aria-hidden="true"
-      className={className}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-    >
-      <ellipse cx="12" cy="5" rx="8" ry="3" />
-      <path d="M4 5v6c0 1.7 3.6 3 8 3s8-1.3 8-3V5" />
-      <path d="M4 11v6c0 1.7 3.6 3 8 3s8-1.3 8-3v-6" />
-    </svg>
-  );
+function askHotpot(query: string) {
+  window.dispatchEvent(new CustomEvent("hotpot:ask-query", { detail: query }));
 }
 
 function HeaderRight({
@@ -66,61 +51,53 @@ function HeaderRight({
   });
 
   const count = data?.items;
-  const formatted = count == null ? "…" : count.toLocaleString();
+  const formatted = count == null ? "..." : count.toLocaleString();
 
   return (
-    <div className="flex w-full flex-wrap items-center justify-between gap-2 md:w-auto md:justify-end md:gap-3">
-      <nav className="hidden items-center gap-1 rounded-full bg-white/10 p-1 text-xs font-medium sm:flex">
-        <NavLink
-          to="/"
-          className={({ isActive }) =>
-            `rounded-full px-3 py-1.5 transition-colors ${
-              isActive ? "bg-white text-brand-dark" : "text-slate-200 hover:bg-white/10 hover:text-white"
-            }`
-          }
-          end
-        >
-          Feed
-        </NavLink>
-        <NavLink
-          to="/security"
-          className={({ isActive }) =>
-            `rounded-full px-3 py-1.5 transition-colors ${
-              isActive ? "bg-white text-brand-dark" : "text-slate-200 hover:bg-white/10 hover:text-white"
-            }`
-          }
-        >
-          Security
-        </NavLink>
-      </nav>
+    <div className="gx-top-actions">
       <button
         type="button"
         onClick={onShowCommunity}
-        className="inline-flex items-center gap-1.5 rounded-full
-                   bg-brand-amber/95 hover:bg-brand-amber text-brand-dark
-                   px-2.5 py-1.5 text-xs font-semibold transition-colors shadow-sm sm:px-3"
-        title="Share a URL or browse community contributions ranked by clicks"
+        className="gx-icon-btn gx-icon-btn-accent"
+        title="Share a URL or browse community contributions"
       >
-        <span aria-hidden="true">🔥＋</span>
-        <span className="max-[420px]:hidden">Community</span>
+        <PlusIcon size={16} />
+        <span className="hidden xl:inline">Contribute</span>
       </button>
       <button
         type="button"
         onClick={onShowSources}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-full bg-white/10
-                   border border-white/15 text-sm tabular-nums hover:bg-white/15
-                   hover:border-white/25 transition-colors sm:gap-2 sm:px-3"
+        className="gx-corpus-pill"
         title={
           data
-            ? `${data.items.toLocaleString()} items across ${data.sources.toLocaleString()} sources — click to browse`
-            : "Loading corpus stats…"
+            ? `${data.items.toLocaleString()} items across ${data.sources.toLocaleString()} sources`
+            : "Loading corpus stats"
         }
       >
-        <CorpusIcon className="w-4 h-4 text-brand-amber" />
-        <span className="text-slate-200 max-[420px]:hidden">corpus</span>
-        <span className="font-semibold text-white">{formatted}</span>
+        <DatabaseIcon size={16} />
+        <span className="hidden sm:inline">corpus</span>
+        <strong>{formatted}</strong>
+      </button>
+      <button
+        type="button"
+        className="gx-icon-btn hidden sm:inline-flex"
+        title="Notifications are not implemented yet"
+        disabled
+      >
+        <BellIcon size={17} />
+      </button>
+      <button
+        type="button"
+        className="gx-icon-btn hidden sm:inline-flex"
+        title="Settings are not implemented yet"
+        disabled
+      >
+        <SettingsIcon size={17} />
       </button>
       <GithubLinkWithTip />
+      <div className="gx-avatar" title="Hotpot workspace">
+        H
+      </div>
     </div>
   );
 }
@@ -155,19 +132,14 @@ function GithubLinkWithTip() {
         href={REPO_URL}
         target="_blank"
         rel="noopener noreferrer"
-        className="text-slate-200 hover:text-white transition-colors"
+        className="gx-icon-btn"
         aria-label="View ranking and scoring algorithm notes on GitHub"
         title="View on GitHub"
       >
-        <GithubIcon className="w-6 h-6" />
+        <GithubIcon className="h-[18px] w-[18px]" />
       </a>
       {showTip && (
-        <div
-          className="absolute right-0 top-[calc(100%+8px)] z-50 w-64 max-w-[calc(100vw-1rem)]
-                     rounded-md border border-white/15 bg-slate-950 px-3 py-2 text-left
-                     text-[11px] leading-relaxed text-white shadow-xl"
-          role="tooltip"
-        >
+        <div className="gx-github-tip" role="tooltip">
           About rank and score algorithm: see it here.
         </div>
       )}
@@ -175,67 +147,189 @@ function GithubLinkWithTip() {
   );
 }
 
+function Sidebar({
+  onShowCommunity,
+  onTopicSelect,
+}: {
+  onShowCommunity: () => void;
+  onTopicSelect: (topic: string) => void;
+}) {
+  const { data } = useQuery({
+    queryKey: ["stats"],
+    queryFn: getStats,
+    staleTime: 30_000,
+  });
+
+  return (
+    <aside className="gx-sidebar">
+      <section>
+        <div className="gx-side-label">
+          My topics
+          <span className="gx-disabled-control" title="Adding custom topics is not implemented yet">
+            <PlusIcon size={13} />
+          </span>
+        </div>
+        <div className="space-y-1">
+          {SIDEBAR_TOPICS.map(([topic, count, on]) => (
+            <button
+              key={topic}
+              type="button"
+              onClick={() => onTopicSelect(topic)}
+              className={`gx-topic-row ${on ? "is-on" : ""}`}
+              title={`Search ${topic}`}
+            >
+              <span className="gx-topic-dot" />
+              <span className="min-w-0 flex-1 truncate text-left">{topic}</span>
+              <span className="gx-topic-count">{count}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section>
+        <div className="gx-side-label">Tuning</div>
+        <div className="px-1 py-1">
+          <div className="mb-1 flex justify-between text-[11px] text-[var(--gx-muted)]">
+            <span>Mostly mine</span>
+            <span>Wider net</span>
+          </div>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value="38"
+            disabled
+            className="gx-range-disabled"
+            title="Personal ranking mix is planned but not implemented yet"
+            aria-label="Personal ranking mix is planned but not implemented yet"
+          />
+          <p className="mt-2 text-[11px] leading-relaxed text-[var(--gx-muted)]">
+            Ranking mix control is planned, but not wired to the backend yet.
+          </p>
+        </div>
+      </section>
+
+      <section>
+        <div className="gx-side-label">Corpus</div>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="gx-mini-stat">
+            <strong>{data?.items.toLocaleString() ?? "..."}</strong>
+            <span>items</span>
+          </div>
+          <div className="gx-mini-stat">
+            <strong>{data?.sources.toLocaleString() ?? "..."}</strong>
+            <span>sources</span>
+          </div>
+        </div>
+      </section>
+
+      <section>
+        <div className="gx-side-label">My lists</div>
+        <div className="space-y-1">
+          {[
+            ["Reading", "14"],
+            ["Cite later", "8"],
+            ["Sent to team", "3"],
+          ].map(([name, count]) => (
+            <button
+              key={name}
+              type="button"
+              className="gx-topic-row"
+              disabled
+              title={`${name} list is not implemented yet`}
+            >
+              <BookmarkIcon size={13} />
+              <span className="min-w-0 flex-1 truncate text-left">{name}</span>
+              <span className="gx-topic-count">{count}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <button type="button" className="gx-contribute-cta" onClick={onShowCommunity}>
+        <PlusIcon size={14} />
+        <span>Contribute a source</span>
+      </button>
+    </aside>
+  );
+}
+
 export default function App() {
   const [showSources, setShowSources] = useState(false);
   const [showCommunity, setShowCommunity] = useState(false);
-  const location = useLocation();
-  const isSecurity = location.pathname.startsWith("/security");
+  const navigate = useNavigate();
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+        e.preventDefault();
+        focusAsk();
+      }
+    }
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
+
+  function selectTopic(topic: string) {
+    navigate("/");
+    window.setTimeout(() => askHotpot(topic), 50);
+  }
 
   return (
-    <div className="min-h-screen flex flex-col">
-      <header className="bg-brand-dark text-white">
-        <div className="max-w-7xl mx-auto px-4 py-4 sm:px-6 sm:py-5 flex flex-col md:flex-row md:items-center md:justify-between gap-3 md:gap-4">
-          <Link to="/" className="flex min-w-0 items-center gap-3 hover:opacity-90">
-            <span className="shrink-0 text-2xl">🌶️</span>
-            <span className="min-w-0 truncate font-serif text-lg font-bold sm:text-2xl">
-              Hotpot Tech Feed
-            </span>
-          </Link>
-          <HeaderRight
-            onShowCommunity={() => setShowCommunity(true)}
-            onShowSources={() => setShowSources(true)}
-          />
-        </div>
-        <nav className="border-t border-white/10 px-4 py-2 sm:hidden">
-          <div className="mx-auto flex max-w-5xl gap-2 text-sm font-medium">
-            <NavLink
-              to="/"
-              end
-              className={({ isActive }) =>
-                `rounded-md px-3 py-1.5 ${
-                  isActive ? "bg-white text-brand-dark" : "text-slate-200"
-                }`
-              }
-            >
-              Feed
-            </NavLink>
-            <NavLink
-              to="/security"
-              className={({ isActive }) =>
-                `rounded-md px-3 py-1.5 ${
-                  isActive ? "bg-white text-brand-dark" : "text-slate-200"
-                }`
-              }
-            >
-              Security
-            </NavLink>
-          </div>
+    <div className="gx-app">
+      <header className="gx-topbar">
+        <Link to="/" className="gx-brand" aria-label="Hotpot home">
+          <span className="gx-brand-dot">H</span>
+          <span>Hotpot</span>
+        </Link>
+
+        <nav className="gx-nav hidden md:flex" aria-label="Primary">
+          <NavLink to="/" end className={({ isActive }) => `gx-nav-link ${isActive ? "is-active" : ""}`}>
+            <FlameIcon size={14} />
+            Hot
+          </NavLink>
+          <NavLink to="/security" className={({ isActive }) => `gx-nav-link ${isActive ? "is-active" : ""}`}>
+            <ShieldIcon size={14} />
+            Security
+          </NavLink>
         </nav>
+
+        <button type="button" className="gx-ask-pill" onClick={focusAsk}>
+          <SparklesIcon size={15} />
+          <span>Ask Hotpot - describe what you want...</span>
+          <kbd>⌘K</kbd>
+        </button>
+
+        <HeaderRight
+          onShowCommunity={() => setShowCommunity(true)}
+          onShowSources={() => setShowSources(true)}
+        />
       </header>
 
-      <main
-        className={`flex-1 mx-auto w-full px-4 py-6 sm:px-6 sm:py-8 ${
-          isSecurity ? "max-w-7xl" : "max-w-5xl"
-        }`}
-      >
-        <Outlet />
-      </main>
+      <nav className="gx-mobile-nav md:hidden" aria-label="Mobile primary">
+        <NavLink to="/" end className={({ isActive }) => `gx-nav-link ${isActive ? "is-active" : ""}`}>
+          <FlameIcon size={14} />
+          Hot
+        </NavLink>
+        <NavLink to="/security" className={({ isActive }) => `gx-nav-link ${isActive ? "is-active" : ""}`}>
+          <ShieldIcon size={14} />
+          Security
+        </NavLink>
+        <button type="button" className="gx-nav-link" onClick={focusAsk}>
+          <SearchIcon size={14} />
+          Ask
+        </button>
+      </nav>
 
-      <footer className="text-xs text-slate-500 text-center py-6 border-t border-slate-200">
-        feed.ai2wj.com — daily CS digest · powered by{" "}
-        <span className="font-semibold text-slate-700">Qwen3.5</span>, a free
-        self-hosted LLM
-      </footer>
+      <div className="gx-layout">
+        <Sidebar
+          onShowCommunity={() => setShowCommunity(true)}
+          onTopicSelect={selectTopic}
+        />
+        <main className="gx-main">
+          <Outlet />
+        </main>
+      </div>
 
       {showCommunity && <CommunityModal onClose={() => setShowCommunity(false)} />}
       {showSources && <SourcesDrawer onClose={() => setShowSources(false)} />}
